@@ -93,7 +93,8 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const outerH = hBack + 2 * thickness;
 
   const hasPocket = pocketDepth > 0 && lip > 0;
-  const segPerCorner = R > 0.01 ? Math.max(1, p.cornerSegments ?? 6) : 0;
+  // V8.4: default 16 segmenti per angolo (era 6): curve lisce anche in anteprima.
+  const segPerCorner = R > 0.01 ? Math.max(1, p.cornerSegments ?? 16) : 0;
 
   const y0 = 0;
   const yH = height;

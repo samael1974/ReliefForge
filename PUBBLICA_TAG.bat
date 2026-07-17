@@ -1,4 +1,4 @@
 @echo off
-echo Questo script non serve piu: il repository e gia collegato a GitHub.
+echo Questo script non serve piu.
 echo Per pubblicare aggiornamenti usa PUBBLICA_AGGIORNAMENTO.bat
 pause

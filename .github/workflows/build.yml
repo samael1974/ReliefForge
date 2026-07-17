@@ -20,7 +20,7 @@ jobs:
       - name: Build frontend
         run: pnpm exec cross-env VITE_ELECTRON=1 vite build --base=./
       - name: Crea installer Windows
-        run: pnpm exec electron-builder --win --x64
+        run: pnpm exec electron-builder --win --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - uses: actions/upload-artifact@v4
@@ -42,7 +42,7 @@ jobs:
       - name: Build frontend
         run: pnpm exec cross-env VITE_ELECTRON=1 vite build --base=./
       - name: Crea app macOS (dmg + zip, non firmata)
-        run: pnpm exec electron-builder --mac
+        run: pnpm exec electron-builder --mac --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - uses: actions/upload-artifact@v4

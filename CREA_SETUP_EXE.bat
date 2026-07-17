@@ -50,7 +50,7 @@ if errorlevel 1 (
 )
 
 echo [3/3] Creo l'installer Windows (2-6 minuti, attendere)...
-call %PNPM% exec electron-builder --win --x64 >> "crea_setup_log.txt" 2>&1
+call %PNPM% exec electron-builder --win --x64 --publish never >> "crea_setup_log.txt" 2>&1
 if errorlevel 1 (
   echo.
   echo ERRORE: creazione installer non riuscita. Vedi crea_setup_log.txt

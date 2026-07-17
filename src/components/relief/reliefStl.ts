@@ -284,10 +284,16 @@ function roundedBox(wasm: any, w: number, h: number, depth: number, r: number, c
   const segs360 = Math.max(16, Math.round(cornerSegments) * 4);
   const cs = wasm.CrossSection.square([coreW, coreH], true).offset(rr, "Round", 2, segs360);
   // extrude(height, nDivisions, twistDegrees, scaleTop, center)
-  return cs.extrude(depth, 0, 0, 1, true);
+  // ⚠️ BUG STORICO RISOLTO (V8.4): scaleTop DEVE essere il vettore [1, 1].
+  // Passare lo scalare 1 in manifold-3d 3.5.1 produce un CUNEO (la faccia
+  // superiore collassa su un asse): era la causa delle geometrie deformi
+  // di cornici e ritagli con angoli arrotondati negli STL esportati.
+  return cs.extrude(depth, 0, 0, [1, 1], true);
 }
 
-const FRAME_CORNER_SEGMENTS = 8;
+// V8.4: 24 segmenti per angolo a 90° — curve lisce anche con raggi grandi (12mm+).
+// Prima erano 8 e sul pezzo stampato si vedevano le sfaccettature.
+const FRAME_CORNER_SEGMENTS = 24;
 
 export type FrameCfg = {
   solidMm: number; frameHeightMm: number; glassMm: 2 | 3; glassClearanceMm: number;
@@ -422,6 +428,21 @@ export async function downloadReliefAssemblyStl(
       const plate = wasm.Manifold.cube([plateW, plateH, plateFrontZ - plateBackZ], true)
         .translate([0, reliefCenterY, (plateFrontZ + plateBackZ) / 2]);
       acc = acc ? acc.add(plate) : plate;
+    }
+
+    // V8.4 FIX ANGOLI ARROTONDATI: il rilievo (e la piastra) sono rettangoli a
+    // spigoli vivi; con cornerRadius > 0 i loro angoli sbucherebbero attraverso
+    // e oltre le pareti curve della cornice (cunei visibili nello slicer).
+    // Soluzione booleana: INTERSEZIONE con un prisma arrotondato pari
+    // all'apertura + margine di saldatura → il contenuto segue le curve e resta
+    // saldato alla cornice per FRAME_INSET su tutto il perimetro.
+    if (!frameOnly && frame && (frame.cornerRadiusMm ?? 0) > 0.01 && acc) {
+      const Rclip = Math.max(0, (frame.cornerRadiusMm ?? 0) - frame.solidMm) + FRAME_INSET;
+      const clipW = frameBackInnerW + 2 * FRAME_INSET;
+      const clipH = frameBackInnerH + 2 * FRAME_INSET;
+      const clip = roundedBox(wasm, clipW, clipH, 400, Rclip, FRAME_CORNER_SEGMENTS)
+        .translate([0, reliefCenterY, 0]);
+      acc = acc.intersect(clip);
     }
 
     // Cornice a VASSOIO (L-profile booleano):
