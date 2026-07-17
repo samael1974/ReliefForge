@@ -1,0 +1,44 @@
+{
+  "appId": "com.reliefforge.desktop",
+  "productName": "ReliefForge",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "logo/**/*",
+    "!node_modules/**/*"
+  ],
+  "win": {
+    "icon": "logo/reliefforge_icon.ico",
+    "target": ["nsis"],
+    "artifactName": "ReliefForge-Setup-${version}.exe"
+  },
+  "mac": {
+    "icon": "logo/reliefforge_icon.icns",
+    "category": "public.app-category.graphics-design",
+    "target": [
+      { "target": "dmg", "arch": ["arm64", "x64"] },
+      { "target": "zip", "arch": ["arm64", "x64"] }
+    ],
+    "artifactName": "ReliefForge-${version}-mac-${arch}.${ext}",
+    "identity": null
+  },
+  "dmg": {
+    "title": "ReliefForge ${version}",
+    "contents": [
+      { "x": 130, "y": 150, "type": "file" },
+      { "x": 410, "y": 150, "type": "link", "path": "/Applications" }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "displayLanguageSelector": true,
+    "installerLanguages": ["it_IT", "en_US", "es_ES", "pt_BR", "fr_FR", "de_DE"],
+    "installerIcon": "logo/reliefforge_icon.ico",
+    "uninstallerIcon": "logo/reliefforge_icon.ico"
+  }
+}

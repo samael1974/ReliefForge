@@ -1,0 +1,24 @@
+RELIEFFORGE V8.4 - INSTALLAZIONE SU MAC
+=======================================
+
+1. Scarica il file .dmg dalla pagina Releases su GitHub:
+   - Mac con chip Apple (M1/M2/M3/M4): ReliefForge-8.4.0-mac-arm64.dmg
+   - Mac Intel: ReliefForge-8.4.0-mac-x64.dmg
+2. Doppio clic sul .dmg e trascina ReliefForge nella cartella Applicazioni.
+3. PRIMO AVVIO (importante): l'app non e' firmata con certificato Apple,
+   quindi macOS la blocchera'. Per aprirla:
+   - clic DESTRO sull'app ReliefForge in Applicazioni -> Apri -> Apri
+   - oppure, su macOS piu' recenti: Impostazioni di Sistema ->
+     Privacy e Sicurezza -> in basso "Apri comunque".
+   Va fatto solo la prima volta.
+
+Se macOS dice che l'app "e' danneggiata", apri il Terminale ed esegui:
+   xattr -cr /Applications/ReliefForge.app
+poi riprova con clic destro -> Apri.
+
+NOTA PER LO SVILUPPATORE
+------------------------
+Il .dmg NON si puo' compilare da Windows: viene generato automaticamente
+dal workflow GitHub Actions (.github/workflows/build.yml) sulle macchine
+macOS di GitHub, a ogni tag di versione (es. v8.4.0) o lancio manuale
+dalla scheda Actions. Gli installer finiscono nella Release.

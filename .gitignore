@@ -1,0 +1,8 @@
+node_modules/
+release/
+dist/
+*.tsbuildinfo
+crea_setup_log.txt
+build_ok.txt
+.vite/
+.vite-temp/
