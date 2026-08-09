@@ -1,6 +1,7 @@
 # ReliefForge — Stato del progetto & Roadmap
 
-> Documento storico V8.1. Per la revisione corrente leggere `CHANGELOG_V8.3.md` e `ISTRUZIONI_V8.3.txt`.
+> Documento storico V8.1, **rivisto in V8.5**: le voci marcate ⚠️ erano dichiarate risolte ma il codice le smentiva.
+> Per la revisione corrente leggere `CHANGELOG_V8.5.md`.
 
 > Documento di lavoro. Riepilogo di cosa è stato fatto e cosa manca. Aggiornato durante le sessioni di sviluppo con Federico.
 
@@ -33,7 +34,7 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 - `src/lib/relief/depth/fuseDepthDetail.ts`, `src/lib/relief/transform/tonemap.ts` — post-processing.
 - `src/components/relief/ReliefPreview3D.tsx` — anteprima 3D (relief + cornice + passepartout + vetro).
 - `src/components/relief/reliefStl.ts` — export STL (`downloadReliefStlBinary`, `downloadReliefAssemblyStl` con fusione manifold).
-- `src/lib/relief/frame/buildFrameRectPocket.ts` (cornice a vassoio + angoli arrotondati + helper `effectiveFrameLipMm`), `buildPassepartoutRectPhi.ts` — geometrie cornice/passepartout. **Nota:** `buildFrameRectPhi.ts` è stato ELIMINATO (sostituito da `buildFrameRectPocket.ts`).
+- `src/lib/relief/frame/buildFrameRectPocket.ts` (cornice a vassoio + angoli arrotondati + helper `effectiveFrameLipMm`), `buildPassepartoutRectPhi.ts` — geometrie cornice/passepartout. **Nota:** `buildFrameRectPhi.ts`, `buildFrameAssembly.ts`, `createFrameGeometry.ts` + `FramePreview3D.tsx` sono **codice morto** (nessun import dal percorso attivo), non eliminati. Da rimuovere.
 - `electron/main.cjs`, `electron/preload.cjs`, `electron-builder.json` — packaging desktop.
 - `Avvia-ReliefForge.bat` — avvio dev con doppio click (solo sul PC di Federico).
 
@@ -54,7 +55,7 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 - ✅ Controlli depth integrati: Dettaglio micro, Rilievo locale, Volume, Contrasto, Denoise, Inverti.
 - ✅ **Input numerici** decimali su ogni slider (digiti il valore esatto al centesimo di mm).
 - ✅ **Export**: STL, OBJ, PLY (mesh via exporter three.js), depth map **16-bit** e **8-bit** (CNC/CAM).
-- ✅ **Cap anti-mesh-pesante** automatico (~600k triangoli max) → file leggeri, si aprono bene in Bambu.
+- ⚠️ **Numero sbagliato**: `MESH_PROFILES` limita le **celle** della heightmap, non i triangoli. `maximum.exportCells = 1_100_000` celle → oltre 2 M di triangoli. Misurato su un export reale 93×63 mm: **1.131.856 triangoli, 56,6 MB** (triangoli da ~0,1 mm su ugello 0,4 mm). Serve decimazione adattiva.
 - ✅ **Donazione** PayPal (pulsante corallo visibile in basso).
 - ✅ Fix **cache modello in Electron** (il Large non si riscarica tra le sessioni).
 
@@ -62,9 +63,9 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 - ✅ Cablati nello Studio (riuso geometria del generatore classico): Cornice (spessore, altezza), Passepartout a gradoni φ, vetro.
 - ✅ **Posizione in profondità**: slider Profondità rilievo (reliefZ) e Profondità passepartout (matZ).
 - ✅ Export **fuso** (cornice+rilievo, manifold, watertight) e **solo cornice** (STL separato, `frameOnly`).
-- ✅ **#1 cornice a filo**: separato `FRAME_INSET=1.0` (inset cornice) da `ASSEMBLY_OVERLAP=3.0` (fusione piano). La cornice non compenetra più il rilievo. (Verificato a video.)
+- ⚠️ **Parzialmente falso**: valeva per l'ANTEPRIMA. Nell'export FUSO la cornice continuava a mordere il rilievo di `FRAME_INSET=1.0` per lato → 2 mm di scarto fra ciò che si vedeva e ciò che si stampava. **Corretto in V8.5** con `assemblyLayout.ts` (sorgente unica per anteprima ed export).
 - ✅ **#2 cornice a VASSOIO (L-profile booleano)** — *rifatto in sessione 2026-06-22*: l'apertura visibile davanti è più stretta del vassoio dietro; la **battuta è ora un gradino strutturale** ottenuto per **sottrazione CSG manifold** (`outer − frontHole − pocket`), non più un anello additivo. La battuta è quindi **visibile in anteprima** "gratis" (è la cornice stessa). Nuovi parametri: **Profondità vassoio** (`pocketDepthMm`). Builder unico `buildFrameRectPocket.ts` (con fallback a scatola cava simmetrica quasi battuta/vassoio = 0).
-- ✅ **Auto-clamp battuta** (`effectiveFrameLipMm`): senza passepartout la battuta = 0 → **la cornice non mangia più il rilievo**; con passepartout sporge al massimo fino al bordo del rilievo. Usato in anteprima ed export (in sync).
+- ⚠️ **RIMOSSO in una revisione successiva alla 8.3** — `effectiveFrameLipMm` oggi è solo `Math.max(0, lipMm)`: la battuta resta attiva anche senza passepartout e copre `lipMm` di rilievo per lato. È voluto (una cornice vera copre qualche mm di quadro), ma fino alla 8.4 non era scritto da nessuna parte e nessun numero a schermo lo diceva. **V8.5**: la copertura risultante è ora mostrata nel pannello Cornice.
 - ✅ **Angoli arrotondati** — nuovo slider **"Arrotonda bordi"** (0–12 mm). Raggi concentrici (bordo a larghezza costante). Anteprima: perimetri rounded-rect allineati (6 segmenti/angolo). Export: `CrossSection.square().offset('Round').extrude()` di manifold (watertight); `R=0` → spigolo vivo via `cube` (veloce). **DA VERIFICARE in stampa/Bambu.**
 - ✅ **Gola a U**: ora dimensionata sull'**apertura frontale** (non più quella retro) → non taglia le pareti laterali quando coesiste col vassoio.
 - ✅ Tipi estesi: `FrameCfg`/`FrameUI` con `pocketDepthMm` e `cornerRadiusMm`. Propagati in `Studio.tsx`, `ReliefPreview3D.tsx`, `ReliefWizard.tsx`.
@@ -85,7 +86,7 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 - Default pannello Rilievo: Profondità 5 mm, Base 2 mm, Larghezza 100 mm, Decimazione 1. + **Altezza (auto)** mostrata.
 - Default Cornice: Spessore bordo 5, Altezza 21; Passepartout Gradoni 1, Larghezza bande 10, Spessore 2, Salto gradino 2.
 - **Bordino vetro (dentino)**: sostituito il vassoio confuso con toggle + Larghezza + Profondità (geometria nell'export).
-- **Rimossa "Gola a U"** (inutile).
+- "Gola a U": rimossa dalla UI, ma il codice `glassSlot` è ancora presente e cablato in `Studio.tsx` / `reliefStl.ts`. Da decidere se completarla o eliminarla.
 
 **Da fare (⏳):**
 - **Bordino vetro VISIBILE in anteprima** (ora la resa preview manca — renderlo nel viewport).
@@ -139,7 +140,7 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 ## 6. Note tecniche / trappole
 - **Mount stale (ambiente di Claude)**: la sandbox a volte legge versioni vecchie/troncate dei file dopo le modifiche. I tool host (Read/Edit) sono autoritativi; la verifica vera la fa **Vite** (in `pnpm electron:dev` l'overlay rosso segnala errori reali).
 - **Build SWC**: non fa typecheck → contano solo sintassi e import.
-- `downloadReliefAssemblyStl` usa **manifold** (WASM) e produce 1 corpo watertight. Il cap decimazione tiene la mesh leggera.
+- `downloadReliefAssemblyStl` usa **manifold** (WASM) e produce 1 corpo watertight. ⚠️ Il cap NON tiene la mesh leggera: vedi sopra.
 - Electron: WebGPU ok; `useBrowserCache=false` in Electron per la cache modello.
 
 ---

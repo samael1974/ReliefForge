@@ -6,8 +6,9 @@ import * as THREE from "three";
 
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
 import type { BaseStyle } from "@/lib/relief/reliefTypes";
-import { buildPassepartoutRectPhi, passepartoutOuterBandsMm } from "@/lib/relief/frame/buildPassepartoutRectPhi";
-import { buildFrameRectPocket, effectiveFrameLipMm } from "@/lib/relief/frame/buildFrameRectPocket";
+import { buildPassepartoutRectPhi } from "@/lib/relief/frame/buildPassepartoutRectPhi";
+import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
+import { computeAssemblyLayout, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { resampleHeightmapFiltered } from "@/lib/relief/heightmapMesh";
 
 export type HeightmapState = {
@@ -76,26 +77,18 @@ type Props = {
   // Veletta positiva che nasconde una strip LED.
   ledValance?: { enabled: boolean; widthMm: number; depthMm: number };
   onPreviewError?: (message: string) => void;
+
+  /** true = mostra l'assieme SALDATO (quello che produce l'export fuso).
+   *  false = mostra i pezzi separati (quello che produce l'export "solo cornice").
+   *  V8.5: e' l'interruttore che rende l'anteprima fedele all'export scelto. */
+  welded?: boolean;
+  /** Riporta al genitore le quote derivate, per mostrarle in UI. */
+  onLayout?: (layout: AssemblyLayout) => void;
 };
 
 const SHOW_HELPERS = true;
 const PREVIEW_MIRROR_Y_180 = false;
 const BG_COLOR = "#f6f7fb";
-// Compenetrazione (mm): rilievo/passepartout/cornice si sovrappongono per fondere in un solido stampabile.
-const ASSEMBLY_OVERLAP = 3.0;
-// Inset della cornice rispetto al perimetro del rilievo: piccolo = cornice "a filo"
-// (entra di poco nel rilievo solo quel tanto che basta per fondersi, non lo copre).
-const FRAME_INSET = 1.0;
-
-function frameBackInnerSize(reliefSizeMm: number, matBandsMm: number, reliefGapMm = 0.3) {
-  if (matBandsMm > 0) {
-    return Math.max(1, reliefSizeMm + 2 * matBandsMm - 2 * ASSEMBLY_OVERLAP - 2 * FRAME_INSET);
-  }
-  // V8.4: senza passepartout l'anteprima mostra l'assemblaggio FISICO:
-  // apertura = rilievo + gioco per lato (niente compenetrazione).
-  // Il "morso" FRAME_INSET resta solo nell'export fuso, dove serve per saldare.
-  return Math.max(1, reliefSizeMm + 2 * Math.max(0, reliefGapMm));
-}
 
 function toBufferGeometry(vertices: Float32Array, indices: Uint32Array): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -125,6 +118,8 @@ function ReliefPreview3DScene({
   colors = { relief: "#2A6075", frame: "#2B2B2B", mat: "#E9E3D6" },
   wireframe = false,
   onPreviewError,
+  welded = true,
+  onLayout,
 }: Props): JSX.Element {
   const solidGeometry = useMemo(() => {
     if (!hmState) return null;
@@ -167,16 +162,54 @@ function ReliefPreview3DScene({
   const reliefPlan = useMemo(() => {
     if (!hmState) return { w: Math.max(1, stlWidthMm), h: Math.max(1, stlWidthMm) };
     const w = Math.max(1, stlWidthMm);
-    const h = w * (hmState.h / hmState.w);
+    // Stessa formula di buildSolidFromHeightmap (segmenti, non pixel).
+    const h = w * ((hmState.h - 1) / (hmState.w - 1));
     return { w, h };
   }, [hmState, stlWidthMm]);
+
+  /** Spessore Z reale del solido rilievo, letto dalla geometria costruita. */
+  const reliefThicknessMm = useMemo(() => {
+    const bb = solidGeometry?.boundingBox;
+    return bb ? bb.max.z - bb.min.z : Math.max(0.4, baseMm) + Math.max(0, depthMm);
+  }, [solidGeometry, baseMm, depthMm]);
+
+  // V8.5: STESSA funzione usata dall'export. Anteprima ed export non possono piu' divergere.
+  const layout = useMemo(() => computeAssemblyLayout({
+    reliefW: reliefPlan.w,
+    reliefH: reliefPlan.h,
+    reliefThicknessMm,
+    reliefYOffset: 1,
+    reliefZmm,
+    matZmm,
+    frame: frame?.enabled ? {
+      solidMm: frame.solidMm,
+      frameHeightMm: frame.frameHeightMm,
+      lipMm: frame.lipMm,
+      pocketDepthMm: frame.pocketDepthMm,
+      cornerRadiusMm: frame.cornerRadiusMm,
+      reliefGapMm: frame.reliefGapMm,
+      glassMm: frame.glassMm,
+      glassClearanceMm: frame.glassClearanceMm,
+    } : null,
+    mat: mat?.enabled ? {
+      steps: mat.steps,
+      totalBandsMm: mat.totalBandsMm,
+      minBandMm: mat.minBandMm,
+      thicknessMm: mat.thicknessMm,
+      stepDropMm: mat.stepDropMm,
+    } : null,
+    welded,
+  }), [reliefPlan.w, reliefPlan.h, reliefThicknessMm, reliefZmm, matZmm, frame, mat, welded]);
+
+  useEffect(() => { onLayout?.(layout); }, [layout, onLayout]);
 
   const matGeometry = useMemo(() => {
     if (!hmState) return null;
     if (!mat?.enabled) return null;
+    if (layout.matInnerW === null || layout.matInnerH === null) return null;
     const out = buildPassepartoutRectPhi({
-      innerWmm: reliefPlan.w - 2 * ASSEMBLY_OVERLAP,
-      innerHmm: reliefPlan.h - 2 * ASSEMBLY_OVERLAP,
+      innerWmm: layout.matInnerW,
+      innerHmm: layout.matInnerH,
       steps: mat.steps,
       totalBandsMm: mat.totalBandsMm,
       thicknessMm: mat.thicknessMm,
@@ -187,35 +220,27 @@ function ReliefPreview3DScene({
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);
     if (!vertices || !indices) return null;
     return toBufferGeometry(vertices, indices);
-  }, [hmState, mat, reliefPlan.w, reliefPlan.h]);
+  }, [hmState, mat, layout.matInnerW, layout.matInnerH]);
 
   // Cornice a vassoio (L-profile): apertura fronte stretta, vassoio retro più largo.
   // La battuta è il gradino strutturale tra le due aperture — non più una mesh separata.
   const frameGeometry = useMemo(() => {
     if (!hmState) return null;
     if (!frame?.enabled) return null;
-    const matBands = mat?.enabled
-      ? passepartoutOuterBandsMm({ steps: mat.steps, totalBandsMm: mat.totalBandsMm, minBandMm: mat.minBandMm })
-      : 0;
-    // Apertura RETRO (vassoio) = bordo esterno del passepartout meno un piccolo morso.
-    // Il passepartout parte da reliefPlan - 2*ASSEMBLY_OVERLAP, quindi anche qui
-    // dobbiamo includere ASSEMBLY_OVERLAP per non lasciare un gap quando la banda cresce.
-    const backInnerW = frameBackInnerSize(reliefPlan.w, matBands, (frame as any).reliefGapMm);
-    const backInnerH = frameBackInnerSize(reliefPlan.h, matBands, (frame as any).reliefGapMm);
     const out = buildFrameRectPocket({
-      innerWmm: backInnerW,
-      innerHmm: backInnerH,
+      innerWmm: layout.frameBackInnerW,
+      innerHmm: layout.frameBackInnerH,
       thicknessMm: frame.solidMm,
       heightMm: frame.frameHeightMm,
-      pocketDepthMm: frame.pocketDepthMm,
-      lipMm: effectiveFrameLipMm(frame.lipMm),
+      pocketDepthMm: layout.effectivePocketDepthMm,
+      lipMm: layout.effectiveLipMm,
       cornerRadiusMm: frame.cornerRadiusMm ?? 0,
     });
     const vertices = (out as any)?.vertices ?? ((out as any)?.[0] as Float32Array | undefined);
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);
     if (!vertices || !indices) return null;
     return toBufferGeometry(vertices, indices);
-  }, [hmState, frame, mat, reliefPlan.w, reliefPlan.h]);
+  }, [hmState, frame, layout.frameBackInnerW, layout.frameBackInnerH, layout.effectivePocketDepthMm, layout.effectiveLipMm]);
 
   // Veletta LED: stesso anello positivo usato nell'export STL, sul fronte
   // interno della cornice. Prima il parametro arrivava alla preview ma non
@@ -224,11 +249,8 @@ function ReliefPreview3DScene({
     if (!hmState || !frame?.enabled || !ledValance?.enabled) return null;
     if (ledValance.widthMm <= 0 || ledValance.depthMm <= 0) return null;
 
-    const matBands = mat?.enabled
-      ? passepartoutOuterBandsMm({ steps: mat.steps, totalBandsMm: mat.totalBandsMm, minBandMm: mat.minBandMm })
-      : 0;
-    const frameInnerW = frameBackInnerSize(reliefPlan.w, matBands, (frame as any).reliefGapMm);
-    const frameInnerH = frameBackInnerSize(reliefPlan.h, matBands, (frame as any).reliefGapMm);
+    const frameInnerW = layout.frameBackInnerW;
+    const frameInnerH = layout.frameBackInnerH;
     const rimW = Math.max(0.5, ledValance.widthMm);
     const rimD = Math.max(0.5, Math.min(ledValance.depthMm, frame.frameHeightMm - 0.5));
     const innerW = Math.max(1, frameInnerW - 2 * rimW);
@@ -248,7 +270,7 @@ function ReliefPreview3DScene({
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);
     if (!vertices || !indices) return null;
     return toBufferGeometry(vertices, indices);
-  }, [hmState, frame, mat, ledValance, reliefPlan.w, reliefPlan.h]);
+  }, [hmState, frame, ledValance, layout.frameBackInnerW, layout.frameBackInnerH]);
 
   useEffect(() => {
     return () => {
@@ -276,47 +298,22 @@ function ReliefPreview3DScene({
 
   const width = Math.max(1, stlWidthMm);
   const camDist = Math.max(220, width * 1.6);
-  const matDrop = mat?.enabled ? mat.matDropMm : 0;
-  const reliefGap = mat?.enabled ? mat.reliefGapMm : 0;
-  const matTopY = reliefTopY - matDrop;
-  const reliefBaseY = matTopY + reliefGap;
   const groundY = -0.01;
 
   // --- Allineamento cornice/passepartout al rilievo ---
-  // Il rilievo ha l'immagine sul piano XY (sta in piedi) e la profondità su Z.
-  // Centro verticale del rilievo (Y) tenendo conto del render offset [0,1,0],
-  // e piano frontale del rilievo (Z) per appoggiarci cornice e passepartout.
-  const reliefCenterY = reliefTopY / 2 + 1;
-  const reliefFrontZ = solidGeometry.boundingBox ? solidGeometry.boundingBox.max.z : 0;
-  // Piano POSTERIORE del rilievo: il passepartout ci si appoggia (continuo, dietro).
-  const reliefBackZ = solidGeometry.boundingBox ? solidGeometry.boundingBox.min.z : 0;
+  // Tutte le quote vengono dal layout condiviso con l'export: qui non si ricalcola nulla.
+  const reliefCenterY = layout.centerY;
 
-  // Rappresentazione del vetro (solo visiva): mostra dove andrà il vetro.
-  // - Modalità vassoio: il vetro appoggia sul gradino di battuta (parete posteriore del bordo frontale della cornice).
+  // Rappresentazione del vetro (solo visiva).
+  // - Modalità vassoio: il vetro appoggia sul gradino di battuta.
   // - Modalità gola a U: il vetro infilato attraverso la fessura sui lati interni.
-  const matBandsR = mat?.enabled
-    ? passepartoutOuterBandsMm({ steps: mat.steps, totalBandsMm: mat.totalBandsMm, minBandMm: mat.minBandMm })
-    : 0;
-  const frameInnerWR = frameBackInnerSize(reliefPlan.w, matBandsR);
-  const frameInnerHR = frameBackInnerSize(reliefPlan.h, matBandsR);
-  const effLipR = frame?.enabled ? effectiveFrameLipMm(frame.lipMm) : 0;
-  const hasPocket = !!(frame?.enabled && effLipR > 0 && frame.pocketDepthMm > 0);
-  const glassThk = glassSlot?.enabled
-    ? Math.max(1, glassSlot.slotThicknessMm)
-    : (hasPocket ? frame!.glassMm : 2);
-  // In modalità vassoio: il vetro entra dal fronte e appoggia sul gradino.
-  // Altrimenti (gola o nessuna battuta): comportamento legacy a 0.8mm dal fronte.
+  const glassThk = glassSlot?.enabled ? Math.max(1, glassSlot.slotThicknessMm) : layout.glassThkMm;
   const glassZ = glassSlot?.enabled
-    ? reliefFrontZ - 1.5 - glassThk / 2
-    : (hasPocket
-      ? reliefFrontZ - frame!.pocketDepthMm + glassThk / 2
-      : reliefFrontZ - 0.8 - glassThk / 2);
-  // La lastra deve essere più grande dell'apertura visibile per sovrapporsi alla
-  // battuta; il gioco viene sottratto dal vassoio su ciascun lato.
-  const glassClearance = frame?.enabled ? Math.max(0, frame.glassClearanceMm) : 0;
-  const glassW = hasPocket ? Math.max(1, frameInnerWR - 2 * glassClearance) : Math.max(1, frameInnerWR);
-  const glassH = hasPocket ? Math.max(1, frameInnerHR - 2 * glassClearance) : Math.max(1, frameInnerHR);
-  const showGlass = !!frame?.enabled && (hasPocket || !!glassSlot?.enabled);
+    ? layout.frameFrontZ - 1.5 - glassThk / 2
+    : layout.glassZ;
+  const glassW = layout.glassW;
+  const glassH = layout.glassH;
+  const showGlass = !!frame?.enabled && (layout.showGlass || !!glassSlot?.enabled);
 
   return (
     <div style={{ width: "100%", height: "100%", background: bgColor }}>
@@ -374,7 +371,7 @@ function ReliefPreview3DScene({
           {matGeometry && (
             <mesh
               geometry={matGeometry}
-              position={[0, reliefCenterY, reliefBackZ + reliefZmm + ASSEMBLY_OVERLAP + matZmm]}
+              position={[0, reliefCenterY, layout.matFrontZ ?? 0]}
               castShadow
               receiveShadow
             >
@@ -413,7 +410,7 @@ function ReliefPreview3DScene({
           {frameGeometry && (
             <mesh
               geometry={frameGeometry}
-              position={[0, reliefCenterY, reliefFrontZ]}
+              position={[0, reliefCenterY, layout.frameFrontZ]}
               rotation={[-Math.PI / 2, 0, 0]}
               castShadow
               receiveShadow
@@ -434,7 +431,7 @@ function ReliefPreview3DScene({
           {ledValanceGeometry && (
             <mesh
               geometry={ledValanceGeometry}
-              position={[0, reliefCenterY, reliefFrontZ]}
+              position={[0, reliefCenterY, layout.frameFrontZ]}
               rotation={[-Math.PI / 2, 0, 0]}
               castShadow
               receiveShadow

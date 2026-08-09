@@ -10,6 +10,7 @@ import {
   Settings, RotateCcw, Save,
 } from "lucide-react";
 import ReliefPreview3D, { type HeightmapState } from "@/components/relief/ReliefPreview3D";
+import type { AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { downloadReliefStlBinary, downloadReliefAssemblyStl } from "@/components/relief/reliefStl";
 import { estimateDepth } from "@/lib/relief/depth/estimateDepth";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
@@ -229,6 +230,10 @@ export default function Studio() {
   const [commercialDraft, setCommercialDraft] = useState<CommercialMessage>(() => loadCommercialMessage());
   const projRef = useRef<HTMLInputElement | null>(null);
   const [wire, setWire] = useState(false); // modalità wireframe del viewport
+  // V8.5: l'anteprima mostra ESATTAMENTE uno dei due export. Fuso = pezzo unico
+  // saldato; Separati = cornice e rilievo da stampare a parte, con il gioco vero.
+  const [previewWelded, setPreviewWelded] = useState(true);
+  const [layout, setLayout] = useState<AssemblyLayout | null>(null);
 
   const C = visualPreferences.theme === "dark" ? DARK_C : LIGHT_C;
   const previewColors = useMemo(() => ({
@@ -742,6 +747,14 @@ export default function Studio() {
               <BoxIcon size={14} /> {wire ? "Solido" : "Wireframe"}
             </button>
           )}
+          {hmState && (frameOn || matOn) && (
+            <button
+              onClick={() => setPreviewWelded((v) => !v)}
+              title="L'anteprima mostra esattamente il file che esporti: pezzo unico saldato oppure pezzi separati."
+              style={{ position: "absolute", top: 12, left: 132, zIndex: 10, display: "flex", alignItems: "center", gap: 6, background: "#0e1116cc", color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <FrameIcon size={14} /> {previewWelded ? "Anteprima: fuso" : "Anteprima: separati"}
+            </button>
+          )}
           {hmState ? (
             <ReliefPreview3D hmState={hmState} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
@@ -754,6 +767,8 @@ export default function Studio() {
               frame={previewFrame}
               mat={previewMat}
               glassSlot={previewGlassSlot}
+              welded={previewWelded}
+              onLayout={setLayout}
               ledValance={previewLedValance} />
           ) : (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.hint, gap: 14 }}>
@@ -867,6 +882,27 @@ export default function Studio() {
             {step === "frame" && (
               <>
                 <PanelTitle Icon={FrameIcon} text="Cornice & passepartout" />
+
+                {layout && (frameOn || matOn) && (
+                  <div style={{ background: "#0e1116", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 11, lineHeight: 1.7 }}>
+                    <div style={{ color: C.muted, fontWeight: 700, marginBottom: 3 }}>Quote risultanti</div>
+                    <QuoteRow label="Ingombro esterno" value={`${layout.outerW.toFixed(1)} × ${layout.outerH.toFixed(1)} × ${layout.outerDepthMm.toFixed(1)} mm`} />
+                    {frameOn && <QuoteRow label="Apertura visibile" value={`${layout.visibleApertureW.toFixed(1)} × ${layout.visibleApertureH.toFixed(1)} mm`} />}
+                    {frameOn && (
+                      <QuoteRow
+                        label="Cornice copre il rilievo"
+                        value={`${layout.reliefCoverPerSideMm.toFixed(1)} mm per lato`}
+                        warn={layout.reliefCoverPerSideMm > 5}
+                      />
+                    )}
+                    {matOn && layout.matInnerW !== null && (
+                      <QuoteRow label="Apertura passepartout" value={`${layout.matInnerW.toFixed(1)} × ${(layout.matInnerH ?? 0).toFixed(1)} mm`} />
+                    )}
+                    {layout.warnings.map((w, i) => (
+                      <div key={i} style={{ color: "#ffb454", marginTop: 5, lineHeight: 1.45 }}>⚠ {w}</div>
+                    ))}
+                  </div>
+                )}
 
                 <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>Posizione in profondità</div>
                 <Slider label="Profondità rilievo" value={reliefZ} min={-40} max={40} step={0.5} suffix=" mm" onChange={setReliefZ} />
@@ -1161,6 +1197,16 @@ function PanelTitle({ Icon, text }: { Icon: any; text: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 13, fontWeight: 600, fontSize: 13 }}>
       <Icon size={16} color="var(--rf-accent)" /> {text}
+    </div>
+  );
+}
+
+/** Riga di sola lettura per le quote derivate dell'assieme (V8.5). */
+function QuoteRow({ label, value, warn = false }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+      <span style={{ color: "var(--rf-hint, #7b8494)" }}>{label}</span>
+      <span style={{ color: warn ? "#ffb454" : "var(--rf-text, #e6e9ef)", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{value}</span>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
-import { buildPassepartoutRectPhi, passepartoutOuterBandsMm } from "@/lib/relief/frame/buildPassepartoutRectPhi";
-import { buildFrameRectPocket, effectiveFrameLipMm } from "@/lib/relief/frame/buildFrameRectPocket";
-import { Evaluator, Brush, ADDITION, SUBTRACTION } from "three-bvh-csg";
+import { buildPassepartoutManifold } from "@/lib/relief/frame/buildPassepartoutManifold";
+import { roundedBox, FRAME_CORNER_SEGMENTS } from "@/lib/relief/frame/manifoldPrimitives";
+import { computeAssemblyLayout, WELD_BITE, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { OutputMode, BaseStyle } from "@/lib/relief/reliefTypes";
 
@@ -174,67 +174,6 @@ function downloadArrayBuffer(buffer: ArrayBuffer, fileName: string) {
 
 // ---- Assieme rilievo + cornice + passepartout (STL multi-corpo) ----
 
-function toGeom(out: { vertices: Float32Array; indices: Uint32Array }): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(out.vertices, 3));
-  g.setIndex(new THREE.BufferAttribute(out.indices, 1));
-  return g;
-}
-
-function mergeGeoms(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const non = geoms.map((g) => (g.index ? g.toNonIndexed() : g));
-  let total = 0;
-  for (const g of non) total += (g.getAttribute("position") as THREE.BufferAttribute).array.length;
-  const merged = new Float32Array(total);
-  let off = 0;
-  for (const g of non) {
-    const arr = (g.getAttribute("position") as THREE.BufferAttribute).array as Float32Array;
-    merged.set(arr, off);
-    off += arr.length;
-  }
-  const m = new THREE.BufferGeometry();
-  m.setAttribute("position", new THREE.BufferAttribute(merged, 3));
-  return m;
-}
-
-/** Prepara una geometria per il CSG: non-indicizzata, con normal + uv (attributi coerenti tra brush). */
-function prepCsg(g: THREE.BufferGeometry): THREE.BufferGeometry {
-  const out = g.index ? g.toNonIndexed() : g.clone();
-  if (!out.getAttribute("normal")) out.computeVertexNormals();
-  if (!out.getAttribute("uv")) {
-    const n = (out.getAttribute("position") as THREE.BufferAttribute).count;
-    out.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(n * 2), 2));
-  }
-  return out;
-}
-
-/** Unione booleana (CSG) di più geometrie in un unico guscio pulito e stampabile. */
-function csgUnion(geoms: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const evaluator = new Evaluator();
-  evaluator.useGroups = false;
-  let result = new Brush(prepCsg(geoms[0]));
-  result.updateMatrixWorld();
-  for (let i = 1; i < geoms.length; i++) {
-    const b = new Brush(prepCsg(geoms[i]));
-    b.updateMatrixWorld();
-    result = evaluator.evaluate(result, b, ADDITION);
-    result.updateMatrixWorld();
-  }
-  return result.geometry;
-}
-
-/** Sottrazione booleana (CSG): scava `cutter` da `base`. */
-function csgSubtract(base: THREE.BufferGeometry, cutter: THREE.BufferGeometry): THREE.BufferGeometry {
-  const evaluator = new Evaluator();
-  evaluator.useGroups = false;
-  const a = new Brush(prepCsg(base));
-  a.updateMatrixWorld();
-  const b = new Brush(prepCsg(cutter));
-  b.updateMatrixWorld();
-  const r = evaluator.evaluate(a, b, SUBTRACTION);
-  return r.geometry;
-}
-
 // --- Manifold: motore CSG robusto (WASM). Fonde anche il rilievo ad alta densità in un solido chiuso. ---
 let _manifoldWasm: any = null;
 async function getManifold(): Promise<any> {
@@ -274,27 +213,6 @@ function manifoldToGeom(man: any): THREE.BufferGeometry {
   return g;
 }
 
-/** Box manifold estruso lungo Z, centrato, con angoli (XY) eventualmente arrotondati.
- *  r<=0 → cubo a spigoli vivi (veloce). r>0 → rounded-rect via CrossSection.offset('Round'). */
-function roundedBox(wasm: any, w: number, h: number, depth: number, r: number, cornerSegments: number): any {
-  const rr = Math.max(0, Math.min(r, w / 2 - 0.01, h / 2 - 0.01));
-  if (rr <= 0.01) return wasm.Manifold.cube([w, h, depth], true);
-  const coreW = Math.max(0.01, w - 2 * rr);
-  const coreH = Math.max(0.01, h - 2 * rr);
-  const segs360 = Math.max(16, Math.round(cornerSegments) * 4);
-  const cs = wasm.CrossSection.square([coreW, coreH], true).offset(rr, "Round", 2, segs360);
-  // extrude(height, nDivisions, twistDegrees, scaleTop, center)
-  // ⚠️ BUG STORICO RISOLTO (V8.4): scaleTop DEVE essere il vettore [1, 1].
-  // Passare lo scalare 1 in manifold-3d 3.5.1 produce un CUNEO (la faccia
-  // superiore collassa su un asse): era la causa delle geometrie deformi
-  // di cornici e ritagli con angoli arrotondati negli STL esportati.
-  return cs.extrude(depth, 0, 0, [1, 1], true);
-}
-
-// V8.4: 24 segmenti per angolo a 90° — curve lisce anche con raggi grandi (12mm+).
-// Prima erano 8 e sul pezzo stampato si vedevano le sfaccettature.
-const FRAME_CORNER_SEGMENTS = 24;
-
 export type FrameCfg = {
   solidMm: number; frameHeightMm: number; glassMm: 2 | 3; glassClearanceMm: number;
   /** Battuta vetro (gradino radiale per lato, mm). 0 = nessuna battuta */
@@ -313,15 +231,20 @@ export type MatCfg = {
 /** Esporta UN STL che contiene rilievo + (passepartout) + (cornice),
  *  con le STESSE trasformazioni dell'anteprima 3D. STL multi-corpo: i corpi
  *  sono chiusi singolarmente; niente check monolitico che bloccherebbe l'export. */
-export async function downloadReliefAssemblyStl(
-  args: DownloadArgs & {
-    frame?: FrameCfg | null; mat?: MatCfg | null; reliefZmm?: number; matZmm?: number;
-    glassSlot?: { enabled: boolean; grooveDepthMm: number; slotThicknessMm: number } | null;
-    ledValance?: { enabled: boolean; widthMm: number; depthMm: number } | null;
-    frameOnly?: boolean; // se true esporta SOLO cornice/passepartout (niente rilievo) per stampa separata
-  }
-) {
-  const { hm, widthMm, depthMm, baseMm, baseStyle, fileName, frame, mat, reliefZmm = 0, matZmm = 0, glassSlot, ledValance, frameOnly = false } = args;
+export type AssemblyArgs = DownloadArgs & {
+  frame?: FrameCfg | null; mat?: MatCfg | null; reliefZmm?: number; matZmm?: number;
+  glassSlot?: { enabled: boolean; grooveDepthMm: number; slotThicknessMm: number } | null;
+  ledValance?: { enabled: boolean; widthMm: number; depthMm: number } | null;
+  frameOnly?: boolean; // se true esporta SOLO cornice/passepartout (niente rilievo) per stampa separata
+};
+
+/** Costruisce la geometria dell'assieme (rilievo + passepartout + cornice) come solido
+ *  manifold unico. Funzione PURA: nessuna API del browser, quindi testabile in Node.
+ *  `downloadReliefAssemblyStl` e' solo il wrapper che la scarica come file. */
+export async function buildReliefAssemblyGeometry(
+  args: AssemblyArgs
+): Promise<{ geometry: THREE.BufferGeometry; layout: AssemblyLayout }> {
+  const { hm, widthMm, depthMm, baseMm, baseStyle, frame, mat, reliefZmm = 0, matZmm = 0, glassSlot, ledValance, frameOnly = false } = args;
   if (!hm?.normF32) throw new Error("STL: heightmap mancante");
 
   // 1) Rilievo (stesso costruttore/orientamento dell'anteprima)
@@ -333,74 +256,40 @@ export async function downloadReliefAssemblyStl(
   relief.computeBoundingBox();
   const bb0 = relief.boundingBox!;
   const c0 = new THREE.Vector3(); bb0.getCenter(c0);
-  relief.translate(-c0.x, -bb0.min.y, -c0.z);
-  relief.translate(0, 1, 0);
-  relief.computeBoundingBox();
-  const reliefTopY = relief.boundingBox!.max.y; // ~ H + 1
-  const reliefCenterY = (reliefTopY - 1) / 2 + 1;
-  const reliefFrontZ = relief.boundingBox!.max.z;
-  const reliefBackZ = relief.boundingBox!.min.z;
+  relief.translate(-c0.x, -bb0.min.y, -c0.z); // X centrato, Y in [0..H], Z centrato
+  relief.translate(0, 1, 0);                  // Y in [1..H+1]
+  const reliefThicknessMm = bb0.max.z - bb0.min.z; // base + profondità
+
+  const planW = widthMm;
+  // Stessa formula di buildSolidFromHeightmap: usa i SEGMENTI (w-1, h-1), non i pixel.
+  // Con (h/w) la cornice risultava ~0.03 mm più alta del rilievo che doveva contenere.
+  const planH = widthMm * ((hm.h - 1) / (hm.w - 1));
+
+  // V8.5: tutte le quote derivate vengono da UNA sola funzione, condivisa con l'anteprima.
+  const L = computeAssemblyLayout({
+    reliefW: planW,
+    reliefH: planH,
+    reliefThicknessMm,
+    reliefYOffset: 1,
+    reliefZmm,
+    matZmm,
+    frame: frame ?? null,
+    mat: mat ?? null,
+    // L'export fuso salda i pezzi (serve il morso); "solo cornice" li stampa separati.
+    welded: !frameOnly,
+  });
+
   // offset di profondità del rilievo (come la posizione mesh in anteprima)
   relief.translate(0, 0, reliefZmm);
 
-  const planW = widthMm;
-  const planH = widthMm * (hm.h / hm.w);
-  const OV = 3.0; // compenetrazione (mm) per la fusione piano/rilievo — combacia con ASSEMBLY_OVERLAP dell'anteprima
-  const FRAME_INSET = 1.0; // quanto la cornice entra nel perimetro del rilievo (piccolo = a filo) — combacia con l'anteprima
+  const reliefCenterY = L.centerY;
+  const frameBackInnerW = L.frameBackInnerW;
+  const frameBackInnerH = L.frameBackInnerH;
 
-  const geoms: THREE.BufferGeometry[] = frameOnly ? [] : [relief];
+  if (L.warnings.length) console.warn("[STL] avvisi assieme:\n - " + L.warnings.join("\n - "));
 
-  // 2) Passepartout = PIANO DI FONDO SOLIDO dietro al rilievo.
-  //    Il fronte del piano compenetra TUTTO il retro del rilievo → fusione robusta garantita.
-  let matBands = 0;
-  if (mat) {
-    matBands = passepartoutOuterBandsMm({ steps: mat.steps, totalBandsMm: mat.totalBandsMm, minBandMm: mat.minBandMm });
-  }
-
-  // Mantiene preview ed STL sulla stessa impronta esterna. Il passepartout
-  // compenetra il rilievo di OV mm per lato; la cornice lo morde di FRAME_INSET.
-  const assemblyOuterW = mat ? planW + 2 * matBands - 2 * OV : planW;
-  const assemblyOuterH = mat ? planH + 2 * matBands - 2 * OV : planH;
-  // V8.4 — due geometrie distinte:
-  //  * export FUSO: la cornice "morde" il resto di FRAME_INSET per saldarsi (come prima);
-  //  * export SOLO CORNICE senza passepartout: la cornice va stampata a parte e deve
-  //    CONTENERE il rilievo → apertura = rilievo + gioco per lato (regolabile in UI).
-  //    (Con passepartout l'apertura è già più larga del rilievo: resta la saldatura col piano.)
-  const reliefGap = Math.max(0, frame?.reliefGapMm ?? 0.3);
-  const separateNoMat = frameOnly && !mat;
-  const frameBackInnerW = separateNoMat ? planW + 2 * reliefGap : Math.max(1, assemblyOuterW - 2 * FRAME_INSET);
-  const frameBackInnerH = separateNoMat ? planH + 2 * reliefGap : Math.max(1, assemblyOuterH - 2 * FRAME_INSET);
-
-  if (mat) {
-    const plateW = assemblyOuterW;
-    const plateH = assemblyOuterH;
-    const plateThk = Math.max(3, mat.thicknessMm);
-    const plateFrontZ = reliefBackZ + reliefZmm + OV + matZmm; // OV mm dentro al retro del rilievo
-    const m = new THREE.BoxGeometry(plateW, plateH, plateThk);
-    m.translate(0, reliefCenterY, plateFrontZ - plateThk / 2);
-    geoms.push(m);
-  }
-
-  // 3) Cornice a vassoio (ruotata come in anteprima). Usata solo per il fallback merge
-  //    (la fusione manifold ricostruisce la cornice da primitive — vedi sotto).
-  if (frame) {
-    const f = toGeom(
-      buildFrameRectPocket({
-        innerWmm: frameBackInnerW,
-        innerHmm: frameBackInnerH,
-        thicknessMm: frame.solidMm,
-        heightMm: frame.frameHeightMm,
-        pocketDepthMm: frame.pocketDepthMm,
-        lipMm: effectiveFrameLipMm(frame.lipMm),
-        cornerRadiusMm: frame.cornerRadiusMm ?? 0,
-      })
-    );
-    f.rotateX(-Math.PI / 2);
-    f.translate(0, reliefCenterY, reliefFrontZ);
-    geoms.push(f);
-  }
-
-  // (Il canale del vetro a baionetta è una SOTTRAZIONE CSG dopo l'unione — vedi sotto.)
+  // (Cornice, passepartout e ritagli sono costruiti da primitive manifold più sotto:
+  //  è l'unico percorso, non c'è più un fallback a merge non-manifold.)
 
   let merged: THREE.BufferGeometry;
   try {
@@ -418,28 +307,36 @@ export async function downloadReliefAssemblyStl(
       }
     }
 
-    // Passepartout = piano di fondo solido (cubo manifold), esteso 2mm dietro al rilievo
-    // (no facce coincidenti) e compenetrante OV mm il retro → fusione robusta.
-    if (mat) {
-      const plateW = assemblyOuterW;
-      const plateH = assemblyOuterH;
-      const plateFrontZ = reliefBackZ + reliefZmm + OV + matZmm;
-      const plateBackZ = reliefBackZ + reliefZmm - 2;
-      const plate = wasm.Manifold.cube([plateW, plateH, plateFrontZ - plateBackZ], true)
-        .translate([0, reliefCenterY, (plateFrontZ + plateBackZ) / 2]);
-      acc = acc ? acc.add(plate) : plate;
+    // V8.5 — PASSEPARTOUT VERO.
+    // Prima qui c'era un `Manifold.cube`: una lastra PIENA, senza apertura, che
+    // veniva unita al rilievo. Con OV=3mm fissi di penetrazione, su rilievi sottili
+    // il fronte della lastra superava la superficie e il bassorilievo spariva dentro
+    // al "passepartout". Ora si costruisce l'anello a gradoni φ CON il foro — la
+    // stessa geometria che si vede in anteprima — e la penetrazione in Z è clampata
+    // dal layout per lasciare sempre materiale di rilievo davanti.
+    if (mat && L.matInnerW !== null && L.matInnerH !== null && L.matFrontZ !== null) {
+      const matM = buildPassepartoutManifold(wasm, {
+        innerWmm: L.matInnerW,
+        innerHmm: L.matInnerH,
+        steps: mat.steps,
+        totalBandsMm: mat.totalBandsMm,
+        minBandMm: mat.minBandMm,
+        thicknessMm: mat.thicknessMm,
+        stepDropMm: mat.stepDropMm,
+      }).translate([0, reliefCenterY, L.matFrontZ]);
+      acc = acc ? acc.add(matM) : matM;
     }
 
-    // V8.4 FIX ANGOLI ARROTONDATI: il rilievo (e la piastra) sono rettangoli a
+    // V8.4 FIX ANGOLI ARROTONDATI: rilievo e passepartout sono rettangoli a
     // spigoli vivi; con cornerRadius > 0 i loro angoli sbucherebbero attraverso
     // e oltre le pareti curve della cornice (cunei visibili nello slicer).
     // Soluzione booleana: INTERSEZIONE con un prisma arrotondato pari
     // all'apertura + margine di saldatura → il contenuto segue le curve e resta
-    // saldato alla cornice per FRAME_INSET su tutto il perimetro.
+    // saldato alla cornice su tutto il perimetro.
     if (!frameOnly && frame && (frame.cornerRadiusMm ?? 0) > 0.01 && acc) {
-      const Rclip = Math.max(0, (frame.cornerRadiusMm ?? 0) - frame.solidMm) + FRAME_INSET;
-      const clipW = frameBackInnerW + 2 * FRAME_INSET;
-      const clipH = frameBackInnerH + 2 * FRAME_INSET;
+      const Rclip = Math.max(0, (frame.cornerRadiusMm ?? 0) - frame.solidMm) + WELD_BITE;
+      const clipW = frameBackInnerW + 2 * WELD_BITE;
+      const clipH = frameBackInnerH + 2 * WELD_BITE;
       const clip = roundedBox(wasm, clipW, clipH, 400, Rclip, FRAME_CORNER_SEGMENTS)
         .translate([0, reliefCenterY, 0]);
       acc = acc.intersect(clip);
@@ -456,13 +353,13 @@ export async function downloadReliefAssemblyStl(
       const backInnerW = frameBackInnerW; // apertura retro (vassoio) -> combacia col passepartout
       const backInnerH = frameBackInnerH;
       const frH = frame.frameHeightMm;
-      // La battuta resta funzionale anche quando non c'è il passepartout.
-      const lip = effectiveFrameLipMm(frame.lipMm ?? 0);
-      const pocketDepth = Math.max(0, Math.min(frame.pocketDepthMm ?? 0, frH - 0.5));
-      const hasPocket = lip > 0 && pocketDepth > 0;
+      // Battuta, vassoio e apertura visibile vengono TUTTI dal layout condiviso.
+      const lip = L.effectiveLipMm;
+      const pocketDepth = L.effectivePocketDepthMm;
+      const hasPocket = L.hasPocket;
 
-      const frontInnerW = hasPocket ? Math.max(1, backInnerW - 2 * lip) : backInnerW;
-      const frontInnerH = hasPocket ? Math.max(1, backInnerH - 2 * lip) : backInnerH;
+      const frontInnerW = L.frameFrontInnerW;
+      const frontInnerH = L.frameFrontInnerH;
 
       // Raggi concentrici: bordo di larghezza costante attorno alle curve.
       const R = Math.max(0, frame.cornerRadiusMm ?? 0);
@@ -487,7 +384,7 @@ export async function downloadReliefAssemblyStl(
         frameM = frameM.subtract(pocket);
       }
 
-      frameM = frameM.translate([0, reliefCenterY, reliefFrontZ - frH / 2]);
+      frameM = frameM.translate([0, reliefCenterY, L.frameFrontZ - frH / 2]);
       acc = acc ? acc.add(frameM) : frameM;
     }
 
@@ -504,20 +401,15 @@ export async function downloadReliefAssemblyStl(
       const rIn = Math.max(0, R - frame.solidMm - rimW);
       const ledgeOuter = roundedBox(wasm, innerW, innerH, rimD, rOut, FRAME_CORNER_SEGMENTS);
       const ledgeHole = roundedBox(wasm, Math.max(1, innerW - 2 * rimW), Math.max(1, innerH - 2 * rimW), rimD + 2, rIn, FRAME_CORNER_SEGMENTS);
-      const ledge = ledgeOuter.subtract(ledgeHole).translate([0, reliefCenterY, reliefFrontZ - rimD / 2]);
+      const ledge = ledgeOuter.subtract(ledgeHole).translate([0, reliefCenterY, L.frameFrontZ - rimD / 2]);
       acc = acc.add(ledge);
     }
 
     // Canale del vetro a baionetta: alloggiamento sui lati interni della cornice, APERTO IN ALTO.
     // Usa l'apertura FRONTE (la slot vive nel bordo frontale della cornice, sopra il vassoio).
     if (frame && glassSlot?.enabled) {
-      const backW = frameBackInnerW;
-      const backH = frameBackInnerH;
-      const lip = effectiveFrameLipMm(frame.lipMm ?? 0);
-      const pocketDepth = Math.max(0, Math.min(frame.pocketDepthMm ?? 0, frame.frameHeightMm - 0.5));
-      const hasPocket = lip > 0 && pocketDepth > 0;
-      const frontW = hasPocket ? Math.max(1, backW - 2 * lip) : backW;
-      const frontH = hasPocket ? Math.max(1, backH - 2 * lip) : backH;
+      const frontW = L.frameFrontInnerW;
+      const frontH = L.frameFrontInnerH;
       const grooveDepth = Math.min(Math.max(0.8, glassSlot.grooveDepthMm), Math.max(1, frame.solidMm - 1.0));
       const slotThk = Math.max(1, glassSlot.slotThicknessMm);
       const frontWall = 1.5;
@@ -527,7 +419,7 @@ export async function downloadReliefAssemblyStl(
       const cutter = wasm.Manifold.cube([sx, boxTop - boxBottom, slotThk], true).translate([
         0,
         (boxTop + boxBottom) / 2,
-        reliefFrontZ - frontWall - slotThk / 2,
+        L.frameFrontZ - frontWall - slotThk / 2,
       ]);
       acc = acc.subtract(cutter);
     }
@@ -542,8 +434,14 @@ export async function downloadReliefAssemblyStl(
     }
     throw new Error("Fusione manifold non riuscita: nessun file esportato (un STL non-manifold non sarebbe stampabile). Dettaglio: " + (e?.message ?? String(e)));
   }
-  const bin = geometryToBinaryStl(merged);
-  downloadArrayBuffer(bin, fileName ?? "reliefforge-cornice");
+  return { geometry: merged, layout: L };
+}
+
+/** Esporta UN STL con rilievo + (passepartout) + (cornice), fuso in un corpo watertight. */
+export async function downloadReliefAssemblyStl(args: AssemblyArgs) {
+  const { geometry } = await buildReliefAssemblyGeometry(args);
+  const bin = geometryToBinaryStl(geometry);
+  downloadArrayBuffer(bin, args.fileName ?? "reliefforge-cornice");
 }
 
 export function downloadReliefStlBinary(args: DownloadArgs) {
