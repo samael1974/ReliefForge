@@ -233,6 +233,9 @@ export default function Studio() {
   // V8.5: l'anteprima mostra ESATTAMENTE uno dei due export. Fuso = pezzo unico
   // saldato; Separati = cornice e rilievo da stampare a parte, con il gioco vero.
   const [previewWelded, setPreviewWelded] = useState(true);
+  // V8.5: mesher adattivo per l'export (triangoli dove serve). Spegnilo per tornare
+  // alla griglia uniforme della 8.4.
+  const [adaptiveMesh, setAdaptiveMesh] = useState(true);
   const [layout, setLayout] = useState<AssemblyLayout | null>(null);
 
   const C = visualPreferences.theme === "dark" ? DARK_C : LIGHT_C;
@@ -494,8 +497,14 @@ export default function Studio() {
     if (!hmState) return null;
     const profile = MESH_PROFILES[meshProfile];
     const factor = Math.max(1, Math.floor(decimate || 1));
+    // Con il mesher adattivo la heightmap va passata a piena risoluzione: la densita'
+    // dei triangoli la decide la tolleranza geometrica, non un pre-ricampionamento.
+    if (adaptiveMesh && factor === 1) return hmState;
     return resampleHeightmapFiltered(hmState, Math.max(4, Math.floor(profile.exportCells / (factor * factor))));
-  }, [hmState, meshProfile, decimate]);
+  }, [hmState, meshProfile, decimate, adaptiveMesh]);
+
+  /** Tolleranza geometrica da passare all'export (0 = griglia uniforme). */
+  const exportToleranceMm = adaptiveMesh ? MESH_PROFILES[meshProfile].toleranceMm : 0;
 
   const exportStl = useCallback(() => {
     if (!hmState) { setStatus("Genera prima il rilievo."); return; }
@@ -503,7 +512,7 @@ export default function Studio() {
       const hm = prepareExportHeightmap();
       if (!hm) return;
       downloadReliefStlBinary({
-        hm, widthMm, depthMm, baseMm,
+        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm,
         outputMode: "relief" as any, baseStyle: "flat" as any, fileName: "reliefforge",
       });
       setStatus(`STL esportato: ${hm.w}×${hm.h}, circa ${formatTriangleCount(estimateCompactSolidTriangles(hm.w, hm.h))} triangoli.`);
@@ -519,6 +528,7 @@ export default function Studio() {
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
+        toleranceMm: exportToleranceMm,
         fileName: "reliefforge-cornice", reliefZmm: reliefZ, matZmm: matZ,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -538,6 +548,7 @@ export default function Studio() {
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
+        toleranceMm: exportToleranceMm,
         fileName: "reliefforge-cornice-sola", reliefZmm: reliefZ, matZmm: matZ, frameOnly: true,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -869,10 +880,18 @@ export default function Studio() {
                     }}>{id === "balanced" ? "Bilanciato" : id === "fine" ? "Fine" : "Massima"}</button>
                   ))}
                 </div>
+                <Toggle label="Mesh adattiva (STL leggero)" on={adaptiveMesh} onChange={setAdaptiveMesh} />
+                <div style={{ fontSize: 10, color: C.hint, margin: "-2px 0 8px", lineHeight: 1.45 }}>
+                  Mette i triangoli dove c'è dettaglio invece di spalmarli sullo sfondo piatto.
+                  Tolleranza {MESH_PROFILES[meshProfile].toleranceMm} mm — su un ritratto tipico
+                  l'STL passa da decine di MB a pochi MB, con la stessa resa in stampa.
+                </div>
                 {meshPlan && (
                   <div style={{ padding: 8, borderRadius: 6, background: C.barDark, border: `1px solid ${C.border}`, color: C.hint, fontSize: 10, lineHeight: 1.5 }}>
                     Preview {meshPlan.preview.w}×{meshPlan.preview.h} · ~{formatTriangleCount(meshPlan.previewTriangles)} triangoli<br />
-                    STL {meshPlan.exported.w}×{meshPlan.exported.h} · ~{formatTriangleCount(meshPlan.exportTriangles)} triangoli
+                    {adaptiveMesh
+                      ? <>STL adattivo · tolleranza {MESH_PROFILES[meshProfile].toleranceMm} mm (conteggio reale a fine export)</>
+                      : <>STL {meshPlan.exported.w}×{meshPlan.exported.h} · ~{formatTriangleCount(meshPlan.exportTriangles)} triangoli</>}
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: C.hint, marginTop: 6 }}>L'export STL è nello step <b style={{ color: C.muted }}>Esporta</b>.</div>

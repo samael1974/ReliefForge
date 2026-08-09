@@ -51,6 +51,48 @@ Il pannello Cornice mostra ora **ingombro esterno**, **apertura visibile**,
 più eventuali avvisi. Con i valori di default della 8.4 (battuta 3,2 + morso 1,0) la
 cornice copriva **4,2 mm per lato** senza che nulla lo dicesse.
 
+## Motore mesh adattivo
+
+`buildSolidFromHeightmap` emetteva **2 triangoli per ogni cella**, uniformemente: lo sfondo
+piatto di un ritratto costava esattamente quanto l'iride. Su una placca 93×63 mm il risultato
+erano 1.131.856 triangoli e 56,6 MB — triangoli da ~0,1 mm con ugelli da 0,4 mm.
+
+Nuovo `buildAdaptiveSolid.ts`: **quadtree ristretto** (bilanciato 2:1) guidato dall'errore
+geometrico reale in millimetri. La densità segue il dettaglio. La mesh resta chiusa e senza
+T-junction per costruzione: il bilanciamento 2:1 garantisce che ogni lato confini al massimo
+con due foglie più fini, e la triangolazione a ventaglio inserisce il punto medio solo dove
+il vicino è effettivamente più fine.
+
+Misurato su un ritratto sintetico 1024×683, placca 90 mm, rilievo 3 mm:
+
+| Tolleranza | Triangoli | STL | vs uniforme | Errore max | Errore medio |
+|---|---|---|---|---|---|
+| — (uniforme 8.4) | 1.405.602 | 67,0 MB | 1× | 0 | 0 |
+| 0,20 mm | 13.292 | 0,6 MB | **107×** | 0,217 mm | 0,003 mm |
+| 0,10 mm | 22.592 | 1,1 MB | **63×** | 0,127 mm | 0,002 mm |
+| 0,06 mm (Fine) | 35.060 | 1,7 MB | **41×** | 0,086 mm | 0,002 mm |
+| 0,03 mm (Massima) | 48.720 | 2,3 MB | **29×** | 0,066 mm | 0,001 mm |
+
+Tutte watertight. L'errore *medio* resta sotto i 3 µm: la tolleranza viene spesa solo dove
+serve. Il CSG manifold lavora di conseguenza su ordini di grandezza meno triangoli, quindi
+anche l'export è molto più rapido.
+
+I profili mesh diventano tolleranze: **Bilanciato 0,12 mm · Fine 0,06 mm · Massima 0,03 mm**.
+Interruttore "Mesh adattiva" nel pannello Rilievo per tornare alla griglia uniforme.
+
+### Due trappole trovate e chiuse durante lo sviluppo
+
+**La griglia di lavoro cambiava le dimensioni fisiche.** Il quadtree richiede una griglia
+(Bx·2^D + 1) × (By·2^D + 1), il cui aspetto è quantizzato. Derivando l'altezza in mm da quella
+griglia la placca si rimpiccioliva di ~1 mm e **la cornice appena sistemata non avrebbe più
+combaciato**. L'altezza in mm ora viene dall'aspetto della heightmap originale.
+
+**Il ricampionamento arrotondava per difetto.** Con `round` la griglia poteva risultare più
+rada della sorgente: le incisioni nette (occhi) venivano smussate *prima* di triangolare, e
+l'errore finale restava inchiodato a 0,39 mm per quanto si stringesse la tolleranza. Ora `ceil`:
+la griglia non è mai più rada della heightmap. Il pavimento residuo è 0,066 mm, misurato
+esplicitamente dal test e ben sotto la risoluzione di stampa.
+
 ## Pulizia
 
 - Rimosso codice morto: `toGeom`, `mergeGeoms`, `csgUnion`, `csgSubtract` (orfani da

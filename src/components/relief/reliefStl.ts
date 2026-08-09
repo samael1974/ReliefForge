@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
+import { buildAdaptiveSolidFromHeightmap } from "@/lib/relief/buildAdaptiveSolid";
 import { buildPassepartoutManifold } from "@/lib/relief/frame/buildPassepartoutManifold";
 import { roundedBox, FRAME_CORNER_SEGMENTS } from "@/lib/relief/frame/manifoldPrimitives";
 import { computeAssemblyLayout, WELD_BITE, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
@@ -20,7 +21,29 @@ type DownloadArgs = {
   outputMode: OutputMode; // (per ora non usato dal builder: tenuto per compatibilità UI)
   baseStyle: BaseStyle;   // ✅ coincide con il builder
   fileName?: string;
+  /** V8.5 — errore geometrico massimo (mm) del mesher adattivo. Assente/0 = griglia uniforme. */
+  toleranceMm?: number;
 };
+
+/** V8.5: mesher adattivo se e' stata indicata una tolleranza, altrimenti griglia uniforme.
+ *  L'adattivo mette i triangoli dove c'e' dettaglio: su un ritratto 90 mm sono ~30x meno
+ *  triangoli a parita' di resa, e il CSG manifold di conseguenza e' molto piu' rapido. */
+function buildReliefSolid(a: {
+  hm: HeightmapState; widthMm: number; depthMm: number; baseMm: number;
+  baseStyle: BaseStyle; toleranceMm?: number;
+}) {
+  if (a.toleranceMm && a.toleranceMm > 0) {
+    return buildAdaptiveSolidFromHeightmap({
+      height01: a.hm.normF32, width: a.hm.w, height: a.hm.h,
+      outWidthMm: a.widthMm, depthMm: a.depthMm, baseMm: a.baseMm,
+      baseStyle: a.baseStyle, toleranceMm: a.toleranceMm,
+    });
+  }
+  return buildSolidFromHeightmap({
+    height01: a.hm.normF32, width: a.hm.w, height: a.hm.h,
+    outWidthMm: a.widthMm, depthMm: a.depthMm, baseMm: a.baseMm, baseStyle: a.baseStyle,
+  });
+}
 
 /** STL binary writer (little-endian) */
 function geometryToBinaryStl(geom: THREE.BufferGeometry): ArrayBuffer {
@@ -244,14 +267,11 @@ export type AssemblyArgs = DownloadArgs & {
 export async function buildReliefAssemblyGeometry(
   args: AssemblyArgs
 ): Promise<{ geometry: THREE.BufferGeometry; layout: AssemblyLayout }> {
-  const { hm, widthMm, depthMm, baseMm, baseStyle, frame, mat, reliefZmm = 0, matZmm = 0, glassSlot, ledValance, frameOnly = false } = args;
+  const { hm, widthMm, depthMm, baseMm, baseStyle, frame, mat, reliefZmm = 0, matZmm = 0, glassSlot, ledValance, frameOnly = false, toleranceMm } = args;
   if (!hm?.normF32) throw new Error("STL: heightmap mancante");
 
   // 1) Rilievo (stesso costruttore/orientamento dell'anteprima)
-  const reliefOut = buildSolidFromHeightmap({
-    height01: hm.normF32, width: hm.w, height: hm.h,
-    outWidthMm: widthMm, depthMm, baseMm, baseStyle,
-  });
+  const reliefOut = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm });
   const relief = reliefOut.geometry;
   relief.computeBoundingBox();
   const bb0 = relief.boundingBox!;
@@ -458,15 +478,7 @@ export function downloadReliefStlBinary(args: DownloadArgs) {
   if (!hm) throw new Error("STL: missing heightmap (hm)");
   if (!(hm.normF32 instanceof Float32Array)) throw new Error("STL: hm.normF32 missing/invalid");
 
-  const out = buildSolidFromHeightmap({
-  height01: hm.normF32,
-  width: hm.w,
-  height: hm.h,
-  outWidthMm: widthMm,
-  depthMm,
-  baseMm,
-  baseStyle,
-});
+  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm });
 const geom = out.geometry;
 geom.rotateZ(Math.PI);
 geom.computeVertexNormals();

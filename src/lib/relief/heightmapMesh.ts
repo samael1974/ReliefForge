@@ -13,24 +13,29 @@ export const MESH_PROFILES: Record<MeshProfile, {
   description: string;
   previewCells: number;
   exportCells: number;
+  /** V8.5: errore geometrico massimo (mm) per il mesher adattivo dell'export. */
+  toleranceMm: number;
 }> = {
   balanced: {
     label: "Bilanciato",
     description: "Preview fluida e STL leggero, adatto alla maggior parte delle stampe.",
     previewCells: 180_000,
     exportCells: 300_000,
+    toleranceMm: 0.12,
   },
   fine: {
     label: "Fine V8.3",
     description: "Dettaglio elevato con ricampionamento filtrato e dimensioni gestibili.",
     previewCells: 320_000,
     exportCells: 750_000,
+    toleranceMm: 0.06,
   },
   maximum: {
     label: "Massima",
     description: "Mantiene quasi tutta la griglia 1024 px. Richiede più memoria e tempo.",
     previewCells: 520_000,
     exportCells: 1_100_000,
+    toleranceMm: 0.03,
   },
 };
 
@@ -57,11 +62,23 @@ export function effectiveMeshStep(w: number, h: number, maxCells: number) {
  */
 export function resampleHeightmapFiltered(hm: HeightmapGrid, maxCells: number): HeightmapGrid {
   const target = resampledSize(hm.w, hm.h, maxCells);
+  return resampleHeightmapTo(hm, target.w, target.h);
+}
+
+/**
+ * Come resampleHeightmapFiltered ma verso una dimensione ESATTA.
+ * Serve al mesher adattivo, che ha bisogno di una griglia (Bx·2^D + 1) × (By·2^D + 1).
+ */
+export function resampleHeightmapTo(hm: HeightmapGrid, targetW: number, targetH: number): HeightmapGrid {
+  const target = { w: Math.max(2, Math.round(targetW)), h: Math.max(2, Math.round(targetH)) };
   if (target.w === hm.w && target.h === hm.h) return hm;
 
+  // Low-pass solo quando si riduce: evita alias e rumore a scacchiera.
   const reduction = Math.max(hm.w / target.w, hm.h / target.h);
   const sigma = Math.max(0.55, reduction * 0.42);
-  const source = gaussianBlurF32(hm.normF32, hm.w, hm.h, sigma);
+  const source = reduction > 1.001
+    ? gaussianBlurF32(hm.normF32, hm.w, hm.h, sigma)
+    : hm.normF32;
   const out = new Float32Array(target.w * target.h);
 
   for (let y = 0; y < target.h; y++) {

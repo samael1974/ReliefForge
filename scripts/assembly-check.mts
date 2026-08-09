@@ -101,6 +101,17 @@ const cases = [
     name: "D. Solo cornice (pezzi separati): deve CONTENERE il rilievo",
     args: { ...baseArgs, depthMm: 3, baseMm: 2, mat: null, reliefZmm: 0, matZmm: 0, frameOnly: true },
   },
+  {
+    name: "E. MESH ADATTIVA + cornice: la cornice deve combaciare come con quella uniforme",
+    args: { ...baseArgs, depthMm: 3, baseMm: 2, mat: null, reliefZmm: -1, matZmm: -1, toleranceMm: 0.06 },
+  },
+  {
+    name: "F. MESH ADATTIVA + passepartout a gradoni",
+    args: {
+      ...baseArgs, depthMm: 3, baseMm: 2, reliefZmm: 0, matZmm: 0, toleranceMm: 0.06,
+      mat: { steps: 2 as const, totalBandsMm: 20, minBandMm: 6, thicknessMm: 3, stepDropMm: 0.8 },
+    },
+  },
 ];
 
 let failures = 0;

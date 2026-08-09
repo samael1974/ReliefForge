@@ -55,10 +55,11 @@ const aliasAt = {
   },
 };
 
-const outfile = path.join(root, "scripts/out/assembly-check.bundle.mjs");
+const entry = process.argv[2] ?? "scripts/assembly-check.mts";
+const outfile = path.join(root, "scripts/out", path.basename(entry).replace(/\.mts$/, "") + ".bundle.mjs");
 
 await esbuild.build({
-  entryPoints: [path.join(root, "scripts/assembly-check.mts")],
+  entryPoints: [path.join(root, entry)],
   bundle: true,
   format: "esm",
   platform: "node",
