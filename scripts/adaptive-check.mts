@@ -108,6 +108,18 @@ const outWidthMm = 90, depthMm = 3, baseMm = 2;
 
 console.log(`Heightmap ${W}x${H} — placca ${outWidthMm} mm, rilievo ${depthMm} mm, base ${baseMm} mm\n`);
 
+/** Mediana di n esecuzioni, in ms. */
+function timeIt(fn: () => void, n = 5) {
+  const ts: number[] = [];
+  for (let i = 0; i < n; i++) { const t0 = performance.now(); fn(); ts.push(performance.now() - t0); }
+  ts.sort((a, b) => a - b);
+  return ts[Math.floor(n / 2)]!;
+}
+
+const uniMs = timeIt(() => {
+  buildSolidFromHeightmap({ height01: hm, width: W, height: H, outWidthMm, depthMm, baseMm, baseStyle: "flat" });
+});
+
 const uni = buildSolidFromHeightmap({
   height01: hm, width: W, height: H,
   outWidthMm, depthMm, baseMm, baseStyle: "flat",
@@ -144,6 +156,12 @@ console.log(`  errore verticale max ${floorErr.toFixed(4)} mm — sotto la risol
 
 let failures = 0;
 for (const tol of [0.02, 0.05, 0.1, 0.2]) {
+  const adMs = timeIt(() => {
+    buildAdaptiveSolidFromHeightmap({
+      height01: hm, width: W, height: H,
+      outWidthMm, depthMm, baseMm, baseStyle: "flat", toleranceMm: tol,
+    });
+  });
   const ad = buildAdaptiveSolidFromHeightmap({
     height01: hm, width: W, height: H,
     outWidthMm, depthMm, baseMm, baseStyle: "flat",
@@ -157,6 +175,7 @@ for (const tol of [0.02, 0.05, 0.1, 0.2]) {
   console.log(`  griglia   : ${ad.stats.gridW}x${ad.stats.gridH}`);
   console.log(`  triangoli : ${t.tri.toLocaleString("it-IT")}  (${ad.stats.reduction.toFixed(1)}x meno della uniforme)`);
   console.log(`  STL binario: ${mb.toFixed(1)} MB`);
+  console.log(`  costruzione: ${adMs.toFixed(0)} ms  (uniforme ${uniMs.toFixed(0)} ms -> ${(uniMs / adMs).toFixed(2)}x)`);
   console.log(`  bordi aperti ${t.open} | non-manifold ${t.nonManifold}`);
   console.log(`  errore verticale: max ${e.maxErr.toFixed(4)} mm | medio ${e.meanErr.toFixed(4)} mm`);
 

@@ -5,6 +5,7 @@ import { OrbitControls, ContactShadows, Environment, Grid } from "@react-three/d
 import * as THREE from "three";
 
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
+import { buildAdaptiveSolidFromHeightmap } from "@/lib/relief/buildAdaptiveSolid";
 import type { BaseStyle } from "@/lib/relief/reliefTypes";
 import { buildPassepartoutRectPhi } from "@/lib/relief/frame/buildPassepartoutRectPhi";
 import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
@@ -84,6 +85,11 @@ type Props = {
   welded?: boolean;
   /** Riporta al genitore le quote derivate, per mostrarle in UI. */
   onLayout?: (layout: AssemblyLayout) => void;
+
+  /** V8.5 — tolleranza (mm) del mesher adattivo. 0/assente = griglia uniforme.
+   *  Passando la STESSA tolleranza dell'export, l'anteprima mostra esattamente la
+   *  mesh che verra' esportata, e il viewport regge 30-100x meno triangoli. */
+  toleranceMm?: number;
 };
 
 const SHOW_HELPERS = true;
@@ -120,16 +126,13 @@ function ReliefPreview3DScene({
   onPreviewError,
   welded = true,
   onLayout,
+  toleranceMm = 0,
 }: Props): JSX.Element {
   const solidGeometry = useMemo(() => {
     if (!hmState) return null;
 
     const manualFactor = Math.max(1, Math.floor(decimateStep || 1));
-    const hm = resampleHeightmapFiltered(hmState, Math.max(4, Math.floor(maxPreviewCells / (manualFactor * manualFactor))));
-    const { geometry } = buildSolidFromHeightmap({
-      height01: hm.normF32,
-      width: hm.w,
-      height: hm.h,
+    const common = {
       outWidthMm: Math.max(1, stlWidthMm),
       depthMm: Math.max(0, depthMm),
       baseMm: Math.max(0, baseMm),
@@ -137,7 +140,18 @@ function ReliefPreview3DScene({
       invert: false,
       clampHeights: true,
       minBaseMm: 0.4,
-    });
+    };
+    // V8.5: con l'adattivo l'anteprima usa lo STESSO mesher dell'export, alla stessa
+    // tolleranza -> quello che vedi e' la mesh che esporti, non un'approssimazione.
+    const geometry = toleranceMm > 0 && manualFactor === 1
+      ? buildAdaptiveSolidFromHeightmap({
+          height01: hmState.normF32, width: hmState.w, height: hmState.h,
+          toleranceMm, ...common,
+        }).geometry
+      : (() => {
+          const hm = resampleHeightmapFiltered(hmState, Math.max(4, Math.floor(maxPreviewCells / (manualFactor * manualFactor))));
+          return buildSolidFromHeightmap({ height01: hm.normF32, width: hm.w, height: hm.h, ...common }).geometry;
+        })();
 
     geometry.computeBoundingBox();
     const bb = geometry.boundingBox;
@@ -150,7 +164,7 @@ function ReliefPreview3DScene({
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
-  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle]);
+  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm]);
 
   const reliefTopY = useMemo(() => {
     if (!solidGeometry) return 0;

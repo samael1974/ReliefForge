@@ -77,6 +77,11 @@ Tutte watertight. L'errore *medio* resta sotto i 3 µm: la tolleranza viene spes
 serve. Il CSG manifold lavora di conseguenza su ordini di grandezza meno triangoli, quindi
 anche l'export è molto più rapido.
 
+Il mesher adattivo e' anche **1,8–2,5× piu' rapido da costruire** della griglia uniforme
+(53 ms contro 97 ms a tolleranza 0,03 mm, su 1024×683). L'**anteprima usa lo stesso mesher
+alla stessa tolleranza dell'export**: quello che vedi nel viewport e' letteralmente la mesh
+che esporti, e il renderer regge 30–100× meno triangoli.
+
 I profili mesh diventano tolleranze: **Bilanciato 0,12 mm · Fine 0,06 mm · Massima 0,03 mm**.
 Interruttore "Mesh adattiva" nel pannello Rilievo per tornare alla griglia uniforme.
 

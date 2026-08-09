@@ -780,6 +780,7 @@ export default function Studio() {
               glassSlot={previewGlassSlot}
               welded={previewWelded}
               onLayout={setLayout}
+              toleranceMm={exportToleranceMm}
               ledValance={previewLedValance} />
           ) : (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.hint, gap: 14 }}>
