@@ -19,6 +19,7 @@ import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter.js";
 import { PLYExporter } from "three/examples/jsm/exporters/PLYExporter.js";
 import { fuseDepthDetail } from "@/lib/relief/depth/fuseDepthDetail";
 import { gaussianBlurF32, gammaF32, percentileClipF32 } from "@/lib/relief/transform/tonemap";
+import { gradientDomainRelief } from "@/lib/relief/transform/gradientRelief";
 import { encodePng16 } from "@/lib/relief/encodePng16";
 import {
   MESH_PROFILES,
@@ -35,6 +36,8 @@ type Raw = { depth: Float32Array; luma: Float32Array; w: number; h: number; devi
 type PP = {
   detailMicro: number; detailSigma: number; skinDenoise: number; volumeGamma: number;
   localAmount: number; localSigma: number; contrastPct: number; invert: boolean;
+  /** V8.5 — compressione nel dominio dei gradienti. 0 = disattivata. */
+  gradientCompression: number;
   segment: boolean; segThreshold: number; segFeather: number;
 };
 type CommercialMessage = {
@@ -79,22 +82,22 @@ const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values
   "portrait-v81": {
     label: "Ritratto V8.1",
     hint: "Pelle regolare, lineamenti leggibili e volume morbido.",
-    values: { detailMicro: 0.2, detailSigma: 1.8, skinDenoise: 4, volumeGamma: 0.8, localAmount: 1.5, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
+    values: { detailMicro: 0.2, detailSigma: 1.8, skinDenoise: 4, volumeGamma: 0.8, localAmount: 1.5, gradientCompression: 4, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
   },
   "natural-v81": {
     label: "Naturale V8.1",
     hint: "Equilibrio originale della versione stabile.",
-    values: { detailMicro: 0.5, detailSigma: 1.8, skinDenoise: 3, volumeGamma: 0.8, localAmount: 0.1, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
+    values: { detailMicro: 0.5, detailSigma: 1.8, skinDenoise: 3, volumeGamma: 0.8, localAmount: 0.1, gradientCompression: 3, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
   },
   "sculpt-v83": {
     label: "Scultura V8.3",
     hint: "Volumi netti per statue, incisioni e soggetti su fondo uniforme.",
-    values: { detailMicro: 0.4, detailSigma: 1.4, skinDenoise: 3.2, volumeGamma: 0.9, localAmount: 0.65, localSigma: 3.2, contrastPct: 0.5, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
+    values: { detailMicro: 0.4, detailSigma: 1.4, skinDenoise: 3.2, volumeGamma: 0.9, localAmount: 0.65, gradientCompression: 6, localSigma: 3.2, contrastPct: 0.5, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
   },
   "photo-v83": {
     label: "Fotografia V8.3",
     hint: "Più micro-dettaglio, con filtro anti-rumore prima della mesh.",
-    values: { detailMicro: 0.65, detailSigma: 1.6, skinDenoise: 2.8, volumeGamma: 0.9, localAmount: 0.75, localSigma: 3.5, contrastPct: 1, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
+    values: { detailMicro: 0.65, detailSigma: 1.6, skinDenoise: 2.8, volumeGamma: 0.9, localAmount: 0.75, gradientCompression: 5, localSigma: 3.5, contrastPct: 1, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
   },
 };
 const DEFAULT_COMMERCIAL_MESSAGE: CommercialMessage = {
@@ -173,6 +176,13 @@ function processHeightmap(raw: Raw, p: PP): Float32Array {
     for (let i = 0; i < n; i++) o[i] = d[i] + p.localAmount * (d[i] - low[i]);
     d = o;
   }
+  // V8.5 — compressione nel dominio dei gradienti, PRIMA di fondere il micro-dettaglio
+  // dalla luminanza. Attenua i gradienti grandi (silhouette) lasciando intatti i
+  // piccoli (superficie), poi ricostruisce con Poisson. E' cio' che permette al
+  // dettaglio di sopravvivere quando la scena viene schiacciata in pochi mm.
+  if (p.gradientCompression > 0) {
+    d = gradientDomainRelief(d, w, h, { compression: p.gradientCompression, cycles: 4 });
+  }
   let f = fuseDepthDetail(d, raw.luma, w, h, { detailAmount: p.detailMicro, detailSigma: p.detailSigma, renormalize: false });
   f = gammaF32(f, p.volumeGamma);
   f = percentileClipF32(f, p.contrastPct / 100);
@@ -236,6 +246,10 @@ export default function Studio() {
   // V8.5: mesher adattivo per l'export (triangoli dove serve). Spegnilo per tornare
   // alla griglia uniforme della 8.4.
   const [adaptiveMesh, setAdaptiveMesh] = useState(true);
+  // V8.5: resa del viewport. "gesso" e' la condizione in cui si giudica davvero
+  // un bassorilievo; "studio" serve a presentarlo.
+  const [renderStyle, setRenderStyle] = useState<"gesso" | "studio">("gesso");
+  const [keyLightDeg, setKeyLightDeg] = useState(35);
   const [layout, setLayout] = useState<AssemblyLayout | null>(null);
 
   const C = visualPreferences.theme === "dark" ? DARK_C : LIGHT_C;
@@ -758,6 +772,24 @@ export default function Studio() {
               <BoxIcon size={14} /> {wire ? "Solido" : "Wireframe"}
             </button>
           )}
+          {hmState && (
+            <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 10, background: "#0e1116cc", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px" }}>
+              <button
+                onClick={() => setRenderStyle((v) => (v === "gesso" ? "studio" : "gesso"))}
+                title="Gesso: materiale opaco e luce radente, per giudicare il rilievo. Studio: resa lucida, per presentarlo."
+                style={{ background: "none", border: "none", color: C.text, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                <Sun size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+                {renderStyle === "gesso" ? "Gesso" : "Studio"}
+              </button>
+              <input
+                type="range" min={0} max={180} step={1} value={keyLightDeg}
+                onChange={(e) => setKeyLightDeg(Number(e.target.value))}
+                title="Direzione della luce radente"
+                style={{ width: 96, accentColor: C.accent, cursor: "pointer" }}
+              />
+              <span style={{ color: C.hint, fontSize: 11, fontVariantNumeric: "tabular-nums", width: 30 }}>{keyLightDeg}°</span>
+            </div>
+          )}
           {hmState && (frameOn || matOn) && (
             <button
               onClick={() => setPreviewWelded((v) => !v)}
@@ -781,6 +813,8 @@ export default function Studio() {
               welded={previewWelded}
               onLayout={setLayout}
               toleranceMm={exportToleranceMm}
+              renderStyle={renderStyle}
+              keyLightDeg={keyLightDeg}
               ledValance={previewLedValance} />
           ) : (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.hint, gap: 14 }}>
@@ -828,6 +862,12 @@ export default function Studio() {
                 </div>
                 <Slider strong label="Dettaglio micro" value={pp.detailMicro} min={0} max={1.5} step={0.1} onChange={(v) => setP("detailMicro", v)} />
                 <Slider label="Raggio dettaglio (σ)" value={pp.detailSigma} min={0.5} max={4} step={0.1} onChange={(v) => setP("detailSigma", v)} />
+                <Slider strong label="Compressione gradienti" value={pp.gradientCompression} min={0} max={12} step={0.5} onChange={(v) => setP("gradientCompression", v)} />
+                <div style={{ fontSize: 10, color: C.hint, margin: "-2px 0 8px", lineHeight: 1.45 }}>
+                  Attenua il dislivello soggetto/sfondo lasciando intatto il dettaglio di
+                  superficie. È quello che rende naso, labbra e palpebre ancora visibili
+                  quando il rilievo è di pochi mm. 0 = disattivata (comportamento 8.4).
+                </div>
                 <Slider strong label="Rilievo locale" value={pp.localAmount} min={0} max={1.5} step={0.1} onChange={(v) => setP("localAmount", v)} />
                 <Slider label="Scala rilievo locale (σ)" value={pp.localSigma} min={1} max={8} step={0.1} onChange={(v) => setP("localSigma", v)} />
                 <Slider label="Volume" value={pp.volumeGamma} min={0.5} max={2} step={0.05} onChange={(v) => setP("volumeGamma", v)} />

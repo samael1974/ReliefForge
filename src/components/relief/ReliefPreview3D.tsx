@@ -86,6 +86,14 @@ type Props = {
   /** Riporta al genitore le quote derivate, per mostrarle in UI. */
   onLayout?: (layout: AssemblyLayout) => void;
 
+  /** V8.5 — resa del viewport. "gesso" = materiale opaco + luce radente, per
+   *  GIUDICARE il rilievo (e' come si valuta un bassorilievo dal vero).
+   *  "studio" = resa lucida, per presentare il pezzo. */
+  renderStyle?: "gesso" | "studio";
+  /** V8.5 — azimut della luce chiave, in gradi. La luce radente rivela incisioni
+   *  che con l'illuminazione frontale sono invisibili. */
+  keyLightDeg?: number;
+
   /** V8.5 — tolleranza (mm) del mesher adattivo. 0/assente = griglia uniforme.
    *  Passando la STESSA tolleranza dell'export, l'anteprima mostra esattamente la
    *  mesh che verra' esportata, e il viewport regge 30-100x meno triangoli. */
@@ -127,6 +135,8 @@ function ReliefPreview3DScene({
   welded = true,
   onLayout,
   toleranceMm = 0,
+  renderStyle = "gesso",
+  keyLightDeg = 35,
 }: Props): JSX.Element {
   const solidGeometry = useMemo(() => {
     if (!hmState) return null;
@@ -329,6 +339,24 @@ function ReliefPreview3DScene({
   const glassH = layout.glassH;
   const showGlass = !!frame?.enabled && (layout.showGlass || !!glassSlot?.enabled);
 
+  // Resa "gesso": materiale opaco e luce quasi tangente. E' la condizione in cui
+  // si giudica un bassorilievo: le incisioni proiettano micro-ombre invece di
+  // essere annegate nei riflessi speculari.
+  const clay = renderStyle === "gesso";
+  const keyRad = (keyLightDeg * Math.PI) / 180;
+  const keyDist = Math.max(400, width * 4);
+  const keyPos: [number, number, number] = [
+    Math.cos(keyRad) * keyDist,
+    Math.sin(keyRad) * keyDist * 0.55 + width * 0.4,
+    Math.abs(Math.sin(keyRad)) * keyDist * 0.35 + width * 1.2,
+  ];
+  const reliefMat = clay
+    ? { roughness: 0.98, metalness: 0.0, clearcoat: 0.0, envMapIntensity: 0.18 }
+    : { roughness: 0.76, metalness: 0.0, clearcoat: 0.0, envMapIntensity: 0.48 };
+  const frameMat = clay
+    ? { roughness: 0.9, metalness: 0.0, clearcoat: 0.0, clearcoatRoughness: 1, envMapIntensity: 0.25 }
+    : { roughness: 0.55, metalness: 0.05, clearcoat: 0.15, clearcoatRoughness: 0.75, envMapIntensity: 1.1 };
+
   return (
     <div style={{ width: "100%", height: "100%", background: bgColor }}>
       <Canvas
@@ -350,11 +378,13 @@ function ReliefPreview3DScene({
         }}
       >
         <color attach="background" args={[bgColor]} />
-        <Environment preset="studio" />
-        <ambientLight intensity={0.14} />
+        <Environment preset="studio" environmentIntensity={clay ? 0.35 : 1} />
+        <ambientLight intensity={clay ? 0.22 : 0.14} />
+        {/* Luce CHIAVE radente: e' l'inclinazione, non l'intensita', a rendere
+            leggibile un bassorilievo. L'azimut e' comandato dalla UI. */}
         <directionalLight
-          position={[420, 680, 380]}
-          intensity={1.35}
+          position={keyPos}
+          intensity={clay ? 2.1 : 1.35}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
@@ -362,10 +392,10 @@ function ReliefPreview3DScene({
           shadow-camera-far={4000}
           shadow-bias={-0.00015}
         />
-        <directionalLight position={[-380, 260, -260]} intensity={0.65} />
-        {/* Luci radenti: rivelano i dettagli del rilievo e i gradini del passepartout */}
-        <directionalLight position={[420, 120, 520]} intensity={0.85} />
-        <directionalLight position={[-420, 120, 520]} intensity={0.5} />
+        {/* Riempimento opposto, tenue: apre le ombre senza cancellare il rilievo. */}
+        <directionalLight position={[-keyPos[0], keyPos[1] * 0.5, -keyPos[2] * 0.4]} intensity={clay ? 0.28 : 0.65} />
+        {!clay && <directionalLight position={[420, 120, 520]} intensity={0.85} />}
+        {!clay && <directionalLight position={[-420, 120, 520]} intensity={0.5} />}
 
         {SHOW_HELPERS && (
           <>
@@ -413,10 +443,10 @@ function ReliefPreview3DScene({
 
             <meshPhysicalMaterial
               color={colors.relief}
-              roughness={0.76}
-              metalness={0.0}
-              clearcoat={0.0}
-              envMapIntensity={0.48}
+              roughness={reliefMat.roughness}
+              metalness={reliefMat.metalness}
+              clearcoat={reliefMat.clearcoat}
+              envMapIntensity={reliefMat.envMapIntensity}
               wireframe={wireframe}
             />
           </mesh>
@@ -431,11 +461,11 @@ function ReliefPreview3DScene({
             >
               <meshPhysicalMaterial
                 color={colors.frame}
-                roughness={0.55}
-                metalness={0.05}
-                clearcoat={0.15}
-                clearcoatRoughness={0.75}
-                envMapIntensity={1.1}
+                roughness={frameMat.roughness}
+                metalness={frameMat.metalness}
+                clearcoat={frameMat.clearcoat}
+                clearcoatRoughness={frameMat.clearcoatRoughness}
+                envMapIntensity={frameMat.envMapIntensity}
                 side={THREE.DoubleSide}
                 wireframe={wireframe}
               />
@@ -452,11 +482,11 @@ function ReliefPreview3DScene({
             >
               <meshPhysicalMaterial
                 color={colors.frame}
-                roughness={0.55}
-                metalness={0.05}
-                clearcoat={0.15}
-                clearcoatRoughness={0.75}
-                envMapIntensity={1.1}
+                roughness={frameMat.roughness}
+                metalness={frameMat.metalness}
+                clearcoat={frameMat.clearcoat}
+                clearcoatRoughness={frameMat.clearcoatRoughness}
+                envMapIntensity={frameMat.envMapIntensity}
                 side={THREE.DoubleSide}
                 wireframe={wireframe}
               />

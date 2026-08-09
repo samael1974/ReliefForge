@@ -98,6 +98,59 @@ l'errore finale restava inchiodato a 0,39 mm per quanto si stringesse la tollera
 la griglia non è mai più rada della heightmap. Il pavimento residuo è 0,066 mm, misurato
 esplicitamente dal test e ben sotto la risoluzione di stampa.
 
+## Algoritmo del bassorilievo: compressione nel dominio dei gradienti
+
+Il difetto di fondo della pipeline 8.4: era tutta **puntuale** (blur, unsharp, gamma,
+clip percentile), cioè funzioni della forma `h → f(h)`.
+
+In una depth map il dislivello soggetto/sfondo domina l'intero intervallo: una testa
+sporge di decine di centimetri, mentre naso, labbra e palpebre sono variazioni di
+pochi millimetri appoggiate sopra quel dislivello. Schiacciando tutto in 3 mm, il
+dettaglio di superficie finisce a pochi micron. Una funzione puntuale **non può**
+rimediare: vede solo il valore, non quanto cambia rispetto ai vicini, quindi qualunque
+curva che schiacci il salto grande schiaccia anche il dettaglio che ci sta sopra.
+
+Nuovi `gradientRelief.ts` + `poisson.ts`: si lavora sulle derivate. Si attenuano i
+gradienti **grandi** (silhouette) lasciando intatti i **piccoli** (superficie) con una
+compressione logaritmica, poi si ricostruisce il campo risolvendo `lap(h) = div(g')`
+con un multigrid a condizioni di Neumann. È l'approccio dei bassorilievi digitali di
+riferimento (Weyrich et al., SIGGRAPH 2007).
+
+Misurato su scena sintetica (cupola + dettaglio di ampiezza nota, rilievo 3 mm) —
+ampiezza RMS dell'alta frequenza sopravvissuta:
+
+| Metodo | Dettaglio | vs lineare |
+|---|---|---|
+| lineare (8.4) | 26 µm | 1,00× |
+| gamma 0,6 | 24 µm | 0,90× |
+| gamma 0,4 | 27 µm | 1,02× |
+| **gradienti α=5** | **196 µm** | **7,5×** |
+| gradienti α=10 | 203 µm | 7,8× |
+
+Il confronto con gamma è la conferma della diagnosi: le rimappature puntuali non
+spostano nulla. E la soglia che conta è pratica — un layer FDM tipico è 80–200 µm,
+quindi **26 µm non si stampano proprio**, 196 µm sì.
+
+Costo ~130 ms su 1024×683: compatibile con l'anteprima. Verifica di correttezza:
+con compressione 0 la ricostruzione restituisce esattamente il campo di partenza
+(differenza media 0,000000), il che valida gradienti, divergenza e risolutore insieme.
+
+Nuovo slider **"Compressione gradienti"** nel pannello Profondità (0 = comportamento
+8.4). Attivo per default nei quattro preset: Ritratto 4, Naturale 3, Scultura 6,
+Fotografia 5.
+
+## Resa del viewport
+
+Un bassorilievo si giudica con la **luce radente**, non con l'illuminazione frontale:
+è l'inclinazione a rivelare le incisioni. Il viewport 8.4 usava un materiale lucido
+con quattro luci diffuse, che annegava il dettaglio nei riflessi.
+
+- Nuova resa **"Gesso"** (default): materiale opaco, environment attenuato, luce chiave
+  radente ad alta intensità e riempimento tenue. Serve a *valutare* il rilievo.
+- Resa **"Studio"**: il comportamento lucido precedente, per presentare il pezzo.
+- **Cursore della direzione luce** (0–180°) nel viewport: ruotare la luce è il gesto
+  con cui si controlla un rilievo dal vero.
+
 ## Pulizia
 
 - Rimosso codice morto: `toGeom`, `mergeGeoms`, `csgUnion`, `csgSubtract` (orfani da
