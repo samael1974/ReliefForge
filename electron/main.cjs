@@ -127,7 +127,7 @@ function createWindow() {
   });
   if (isSmoke) {
     win.webContents.once("did-finish-load", () => {
-      console.log("[SMOKE] ReliefForge V8.3 Studio caricato correttamente.");
+      console.log(`[SMOKE] ReliefForge ${app.getVersion()} Studio caricato correttamente.`);
       app.quit();
     });
   }

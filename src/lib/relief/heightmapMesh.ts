@@ -18,21 +18,21 @@ export const MESH_PROFILES: Record<MeshProfile, {
 }> = {
   balanced: {
     label: "Bilanciato",
-    description: "Preview fluida e STL leggero, adatto alla maggior parte delle stampe.",
+    description: "Tolleranza 0,12 mm: STL molto leggero, adatto alla maggior parte delle stampe.",
     previewCells: 180_000,
     exportCells: 300_000,
     toleranceMm: 0.12,
   },
   fine: {
-    label: "Fine V8.3",
-    description: "Dettaglio elevato con ricampionamento filtrato e dimensioni gestibili.",
+    label: "Fine",
+    description: "Dettaglio elevato, tolleranza 0,06 mm. Buon compromesso per ritratti.",
     previewCells: 320_000,
     exportCells: 750_000,
     toleranceMm: 0.06,
   },
   maximum: {
     label: "Massima",
-    description: "Mantiene quasi tutta la griglia 1024 px. Richiede più memoria e tempo.",
+    description: "Tolleranza 0,03 mm: massimo dettaglio conservato, file piu' pesante.",
     previewCells: 520_000,
     exportCells: 1_100_000,
     toleranceMm: 0.03,

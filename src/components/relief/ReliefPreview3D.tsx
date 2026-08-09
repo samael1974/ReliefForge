@@ -345,7 +345,7 @@ function ReliefPreview3DScene({
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
           gl.domElement.addEventListener("webglcontextlost", (event) => {
             event.preventDefault();
-            onPreviewError?.("Il renderer 3D ha esaurito le risorse. La preview è stata alleggerita: usa Bilanciato o Fine V8.3.");
+            onPreviewError?.("Il renderer 3D ha esaurito le risorse. La preview è stata alleggerita: passa a Bilanciato o Fine.");
           }, { once: true });
         }}
       >

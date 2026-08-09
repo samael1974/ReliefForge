@@ -416,7 +416,7 @@ export default function Studio() {
   const saveProject = useCallback(() => {
     if (!imgDataUrl) { setStatus("Apri prima un'immagine."); return; }
     const proj = {
-      app: "ReliefForge", appVersion: "8.4.0", fileVersion: 2, savedAt: new Date().toISOString(),
+      app: "ReliefForge", appVersion: __APP_VERSION__, fileVersion: 2, savedAt: new Date().toISOString(),
       image: imgDataUrl, quality, pp, depthPreset: activeDepthPreset,
       relief: { depthMm, baseMm, widthMm, decimate, meshProfile },
       appearance: visualPreferences,
@@ -659,7 +659,7 @@ export default function Studio() {
       <div style={{ height: 36, background: C.bar, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 5, background: C.accent }} /> ReliefForge 8.4
+            <span style={{ width: 10, height: 10, borderRadius: 5, background: C.accent }} /> ReliefForge {__APP_VERSION__}
           </span>
           <div style={{ position: "relative", fontSize: 13 }}>
             <button onClick={() => { setPreferencesMenu(false); setFileMenu((v) => !v); }} style={menuBtn}>File ▾</button>
@@ -884,14 +884,14 @@ export default function Studio() {
                 <Toggle label="Mesh adattiva (STL leggero)" on={adaptiveMesh} onChange={setAdaptiveMesh} />
                 <div style={{ fontSize: 10, color: C.hint, margin: "-2px 0 8px", lineHeight: 1.45 }}>
                   Mette i triangoli dove c'è dettaglio invece di spalmarli sullo sfondo piatto.
-                  Tolleranza {MESH_PROFILES[meshProfile].toleranceMm} mm — su un ritratto tipico
+                  Tolleranza {MESH_PROFILES[meshProfile].toleranceMm.toLocaleString("it-IT")} mm — su un ritratto tipico
                   l'STL passa da decine di MB a pochi MB, con la stessa resa in stampa.
                 </div>
                 {meshPlan && (
                   <div style={{ padding: 8, borderRadius: 6, background: C.barDark, border: `1px solid ${C.border}`, color: C.hint, fontSize: 10, lineHeight: 1.5 }}>
                     Preview {meshPlan.preview.w}×{meshPlan.preview.h} · ~{formatTriangleCount(meshPlan.previewTriangles)} triangoli<br />
                     {adaptiveMesh
-                      ? <>STL adattivo · tolleranza {MESH_PROFILES[meshProfile].toleranceMm} mm (conteggio reale a fine export)</>
+                      ? <>STL adattivo · tolleranza {MESH_PROFILES[meshProfile].toleranceMm.toLocaleString("it-IT")} mm (conteggio reale a fine export)</>
                       : <>STL {meshPlan.exported.w}×{meshPlan.exported.h} · ~{formatTriangleCount(meshPlan.exportTriangles)} triangoli</>}
                   </div>
                 )}
