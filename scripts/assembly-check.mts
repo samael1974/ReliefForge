@@ -115,6 +115,31 @@ const cases = [
     args: { ...baseArgs, depthMm: 3, baseMm: 2, mat: null, reliefZmm: -1, matZmm: -1, toleranceMm: 0.06 },
   },
   {
+    name: "H. ANGOLI ARROTONDATI r=8 + battuta (percorso booleano mai testato)",
+    args: {
+      ...baseArgs, depthMm: 5, baseMm: 2, mat: null, reliefZmm: 0, matZmm: 0, toleranceMm: 0.06,
+      frame: { solidMm: 5, frameHeightMm: 21, glassMm: 2 as const, glassClearanceMm: 0.25,
+               lipMm: 3, pocketDepthMm: 3.6, cornerRadiusMm: 8, reliefGapMm: 0.3 },
+    },
+  },
+  {
+    name: "I. ANGOLI ARROTONDATI r=12 (massimo dello slider) + passepartout",
+    args: {
+      ...baseArgs, depthMm: 3, baseMm: 2, reliefZmm: 0, matZmm: 0, toleranceMm: 0.06,
+      frame: { solidMm: 5, frameHeightMm: 21, glassMm: 2 as const, glassClearanceMm: 0.25,
+               lipMm: 3, pocketDepthMm: 3.6, cornerRadiusMm: 12, reliefGapMm: 0.3 },
+      mat: { steps: 2 as const, totalBandsMm: 20, minBandMm: 6, thicknessMm: 3, stepDropMm: 0.8 },
+    },
+  },
+  {
+    name: "L. ANGOLI ARROTONDATI r=12 su cornice SOTTILE (raggio > spessore bordo)",
+    args: {
+      ...baseArgs, depthMm: 5, baseMm: 2, mat: null, reliefZmm: 0, matZmm: 0, toleranceMm: 0.06,
+      frame: { solidMm: 2, frameHeightMm: 12, glassMm: 2 as const, glassClearanceMm: 0.25,
+               lipMm: 3, pocketDepthMm: 2, cornerRadiusMm: 12, reliefGapMm: 0.3 },
+    },
+  },
+  {
     name: "F. MESH ADATTIVA + passepartout a gradoni",
     args: {
       ...baseArgs, depthMm: 3, baseMm: 2, reliefZmm: 0, matZmm: 0, toleranceMm: 0.06,
@@ -122,6 +147,19 @@ const cases = [
     },
   },
 ];
+
+/**
+ * Distanza con segno dal perimetro rounded-rect (positiva = FUORI).
+ * Serve a intercettare il difetto tipico degli angoli arrotondati: rilievo e
+ * passepartout sono rettangoli SPIGOLOSI, la cornice e' curva, quindi senza
+ * l'intersezione booleana di clip i loro angoli sbucherebbero oltre la parete.
+ */
+function roundedRectSdf(x: number, y: number, hw: number, hh: number, r: number) {
+  const rr = Math.max(0, Math.min(r, hw, hh));
+  const qx = Math.abs(x) - (hw - rr);
+  const qy = Math.abs(y) - (hh - rr);
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
+}
 
 let failures = 0;
 const outDir = path.resolve("scripts/out");
@@ -153,6 +191,19 @@ for (const c of cases) {
     const intrusion = layout.reliefFrontZ - glassBackZ;
     if (intrusion > 1e-6) { console.log(`  ✗ il vetro entra nel rilievo di ${intrusion.toFixed(2)} mm`); failures++; }
     else console.log(`  ✓ vetro appoggiato sul fronte del rilievo (scarto ${(-intrusion).toFixed(2)} mm)`);
+  }
+
+  // Angoli arrotondati: nessun vertice puo' stare FUORI dal profilo esterno curvo.
+  const R = (c.args as any).frame?.cornerRadiusMm ?? 0;
+  if (R > 0.01) {
+    const pos = geometry.getAttribute("position");
+    let worst = -Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const d = roundedRectSdf(pos.getX(i), pos.getY(i) - layout.centerY, layout.frameOuterW / 2, layout.frameOuterH / 2, R);
+      if (d > worst) worst = d;
+    }
+    if (worst > 0.01) { console.log(`  ✗ materiale FUORI dal profilo curvo di ${worst.toFixed(3)} mm (angoli che sbucano)`); failures++; }
+    else console.log(`  ✓ nessun angolo sbuca dal profilo curvo (scarto max ${worst.toFixed(3)} mm)`);
   }
 
   if (r.open !== 0 || r.nonManifold !== 0) { console.log("  ✗ NON watertight"); failures++; }

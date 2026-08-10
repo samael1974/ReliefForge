@@ -26,6 +26,8 @@ type FrameUI = {
   glassClearanceMm: number;
   pocketDepthMm: number;
   lipMm: number;
+  /** @deprecated Non usato da nessuna geometria. Resta nel tipo perche' lo passa
+   *  ancora ReliefWizard (web, congelato alla 8.1). Da togliere insieme al wizard. */
   pocketRadialMm: number;
   cornerRadiusMm?: number;
   /** Gioco per lato tra rilievo e apertura cornice (mm) — solo assemblaggio separato */
@@ -39,7 +41,9 @@ type MatUI = {
   minBandMm: number;
   thicknessMm: number;
   stepDropMm: number;
+  /** @deprecated Non usato da nessuna geometria (vedi pocketRadialMm). */
   matDropMm: number;
+  /** @deprecated Non usato: il gioco del passepartout e' MAT_OVERLAP in assemblyLayout. */
   reliefGapMm: number;
 };
 

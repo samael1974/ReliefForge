@@ -34,7 +34,7 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 - `src/lib/relief/depth/fuseDepthDetail.ts`, `src/lib/relief/transform/tonemap.ts` — post-processing.
 - `src/components/relief/ReliefPreview3D.tsx` — anteprima 3D (relief + cornice + passepartout + vetro).
 - `src/components/relief/reliefStl.ts` — export STL (`downloadReliefStlBinary`, `downloadReliefAssemblyStl` con fusione manifold).
-- `src/lib/relief/frame/buildFrameRectPocket.ts` (cornice a vassoio + angoli arrotondati + helper `effectiveFrameLipMm`), `buildPassepartoutRectPhi.ts` — geometrie cornice/passepartout. **Nota:** `buildFrameRectPhi.ts`, `buildFrameAssembly.ts`, `createFrameGeometry.ts` + `FramePreview3D.tsx` sono **codice morto** (nessun import dal percorso attivo), non eliminati. Da rimuovere.
+- `src/lib/relief/frame/buildFrameRectPocket.ts` (cornice a vassoio + angoli arrotondati + helper `effectiveFrameLipMm`), `buildPassepartoutRectPhi.ts` — geometrie cornice/passepartout. **Nota:** `buildFrameRectPhi.ts`, `buildFrameAssembly.ts`, `createFrameGeometry.ts` e `FramePreview3D.tsx` sono stati **eliminati in V8.5** (erano codice morto con tre convenzioni di assi diverse: la confusione fra "front" e "back" che ne derivava è all'origine del difetto della battuta).
 - `electron/main.cjs`, `electron/preload.cjs`, `electron-builder.json` — packaging desktop.
 - `Avvia-ReliefForge.bat` — avvio dev con doppio click (solo sul PC di Federico).
 
@@ -86,7 +86,7 @@ Filosofia: gratuito, in-browser/locale, niente account, privacy. Donationware (P
 - Default pannello Rilievo: Profondità 5 mm, Base 2 mm, Larghezza 100 mm, Decimazione 1. + **Altezza (auto)** mostrata.
 - Default Cornice: Spessore bordo 5, Altezza 21; Passepartout Gradoni 1, Larghezza bande 10, Spessore 2, Salto gradino 2.
 - **Bordino vetro (dentino)**: sostituito il vassoio confuso con toggle + Larghezza + Profondità (geometria nell'export).
-- "Gola a U": rimossa dalla UI, ma il codice `glassSlot` è ancora presente e cablato in `Studio.tsx` / `reliefStl.ts`. Da decidere se completarla o eliminarla.
+- ⚠️ **"Gola a U" NON è stata rimossa**: il toggle "Alloggiamento vetro (scasso a U)" è vivo in `Studio.tsx` e la sottrazione booleana è cablata in `reliefStl.ts`. È una funzione attiva, non codice morto. Resta da tarare le tolleranze con prove reali.
 
 **Da fare (⏳):**
 - **Bordino vetro VISIBILE in anteprima** (ora la resa preview manca — renderlo nel viewport).
