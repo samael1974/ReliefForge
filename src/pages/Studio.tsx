@@ -19,7 +19,6 @@ import { OBJExporter } from "three/examples/jsm/exporters/OBJExporter.js";
 import { PLYExporter } from "three/examples/jsm/exporters/PLYExporter.js";
 import { fuseDepthDetail } from "@/lib/relief/depth/fuseDepthDetail";
 import { gaussianBlurF32, gammaF32, percentileClipF32 } from "@/lib/relief/transform/tonemap";
-import { gradientDomainRelief } from "@/lib/relief/transform/gradientRelief";
 import { encodePng16 } from "@/lib/relief/encodePng16";
 import {
   MESH_PROFILES,
@@ -36,8 +35,6 @@ type Raw = { depth: Float32Array; luma: Float32Array; w: number; h: number; devi
 type PP = {
   detailMicro: number; detailSigma: number; skinDenoise: number; volumeGamma: number;
   localAmount: number; localSigma: number; contrastPct: number; invert: boolean;
-  /** V8.5 — compressione nel dominio dei gradienti. 0 = disattivata. */
-  gradientCompression: number;
   segment: boolean; segThreshold: number; segFeather: number;
 };
 type CommercialMessage = {
@@ -54,7 +51,7 @@ type VisualPreferences = {
   frameColor: string;
   matColor: string;
 };
-type DepthPresetId = "portrait-v81" | "natural-v81" | "sculpt-v83" | "photo-v83";
+type DepthPresetId = "ritratto";
 type DepthPresetSelection = DepthPresetId | "custom";
 
 const DARK_C = {
@@ -78,28 +75,35 @@ const DEFAULT_VISUAL_PREFERENCES: VisualPreferences = {
   matColor: "#E9E3D6",
 };
 
-const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values: PP }> = {
-  "portrait-v81": {
-    label: "Ritratto V8.1",
-    hint: "Pelle regolare, lineamenti leggibili e volume morbido.",
-    values: { detailMicro: 0.2, detailSigma: 1.8, skinDenoise: 4, volumeGamma: 0.8, localAmount: 1.5, gradientCompression: 4, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
-  },
-  "natural-v81": {
-    label: "Naturale V8.1",
-    hint: "Equilibrio originale della versione stabile.",
-    values: { detailMicro: 0.5, detailSigma: 1.8, skinDenoise: 3, volumeGamma: 0.8, localAmount: 0.1, gradientCompression: 3, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
-  },
-  "sculpt-v83": {
-    label: "Scultura V8.3",
-    hint: "Volumi netti per statue, incisioni e soggetti su fondo uniforme.",
-    values: { detailMicro: 0.4, detailSigma: 1.4, skinDenoise: 3.2, volumeGamma: 0.9, localAmount: 0.65, gradientCompression: 6, localSigma: 3.2, contrastPct: 0.5, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
-  },
-  "photo-v83": {
-    label: "Fotografia V8.3",
-    hint: "Più micro-dettaglio, con filtro anti-rumore prima della mesh.",
-    values: { detailMicro: 0.65, detailSigma: 1.6, skinDenoise: 2.8, volumeGamma: 0.9, localAmount: 0.75, gradientCompression: 5, localSigma: 3.5, contrastPct: 1, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
+/**
+ * Preset di lavoro. V8.5: i quattro preset storici (V8.1/V8.3) erano tarati su una
+ * pipeline che non esiste piu' e non producevano risultati utili; sostituiti da UN
+ * preset ricavato da una lavorazione reale riuscita.
+ *
+ * A differenza di prima il preset copre ENTRAMBI i pannelli: ripristinare solo la
+ * Profondita' e lasciare fuori profondita'/base/larghezza rendeva il preset inutile,
+ * perche' la resa dipende dalla combinazione dei due.
+ *
+ * Nuovi preset si aggiungono solo dopo aver verificato i valori su un soggetto vero.
+ */
+type PresetRelief = {
+  depthMm: number; baseMm: number; widthMm: number;
+  decimate: number; meshProfile: MeshProfile; adaptiveMesh: boolean;
+};
+
+const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values: PP; relief: PresetRelief }> = {
+  ritratto: {
+    label: "Ritratto",
+    hint: "Volto su fondo scuro: soggetto isolato, sfondo piatto, lineamenti leggibili. Tarato su una lavorazione reale.",
+    values: {
+      detailMicro: 0.15, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
+      localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
+      segment: true, segThreshold: 0.1, segFeather: 0,
+    },
+    relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: false },
   },
 };
+
 const DEFAULT_COMMERCIAL_MESSAGE: CommercialMessage = {
   enabled: true,
   title: "Sostieni ReliefForge",
@@ -176,13 +180,6 @@ function processHeightmap(raw: Raw, p: PP): Float32Array {
     for (let i = 0; i < n; i++) o[i] = d[i] + p.localAmount * (d[i] - low[i]);
     d = o;
   }
-  // V8.5 — compressione nel dominio dei gradienti, PRIMA di fondere il micro-dettaglio
-  // dalla luminanza. Attenua i gradienti grandi (silhouette) lasciando intatti i
-  // piccoli (superficie), poi ricostruisce con Poisson. E' cio' che permette al
-  // dettaglio di sopravvivere quando la scena viene schiacciata in pochi mm.
-  if (p.gradientCompression > 0) {
-    d = gradientDomainRelief(d, w, h, { compression: p.gradientCompression, cycles: 4 });
-  }
   let f = fuseDepthDetail(d, raw.luma, w, h, { detailAmount: p.detailMicro, detailSigma: p.detailSigma, renormalize: false });
   f = gammaF32(f, p.volumeGamma);
   f = percentileClipF32(f, p.contrastPct / 100);
@@ -245,10 +242,10 @@ export default function Studio() {
   const [previewWelded, setPreviewWelded] = useState(true);
   // V8.5: mesher adattivo per l'export (triangoli dove serve). Spegnilo per tornare
   // alla griglia uniforme della 8.4.
-  const [adaptiveMesh, setAdaptiveMesh] = useState(true);
+  const [adaptiveMesh, setAdaptiveMesh] = useState(DEPTH_PRESETS.ritratto.relief.adaptiveMesh);
   // V8.5: resa del viewport. "gesso" e' la condizione in cui si giudica davvero
   // un bassorilievo; "studio" serve a presentarlo.
-  const [renderStyle, setRenderStyle] = useState<"gesso" | "studio">("gesso");
+  const [renderStyle, setRenderStyle] = useState<"gesso" | "studio" | "matcap">("matcap");
   const [keyLightDeg, setKeyLightDeg] = useState(35);
   const [layout, setLayout] = useState<AssemblyLayout | null>(null);
 
@@ -274,25 +271,34 @@ export default function Studio() {
 
   const [step, setStep] = useState<Step>("image");
   const [quality, setQuality] = useState<Quality>("large");
-  const [activeDepthPreset, setActiveDepthPreset] = useState<DepthPresetSelection>("portrait-v81");
+  const [activeDepthPreset, setActiveDepthPreset] = useState<DepthPresetSelection>("ritratto");
 
-  const [pp, setPp] = useState<PP>(DEPTH_PRESETS["portrait-v81"].values);
+  const [pp, setPp] = useState<PP>({ ...DEPTH_PRESETS.ritratto.values });
   const setP = (k: keyof PP, v: number | boolean) => {
     setActiveDepthPreset("custom");
     setPp((s) => ({ ...s, [k]: v }));
   };
   const applyDepthPreset = (id: DepthPresetId) => {
+    const preset = DEPTH_PRESETS[id];
     setActiveDepthPreset(id);
-    setPp({ ...DEPTH_PRESETS[id].values });
-    setDepthMm(id === "portrait-v81" || id === "natural-v81" ? 5 : 5.5);
-    setStatus(`Preset ${DEPTH_PRESETS[id].label} applicato.`);
+    setPp({ ...preset.values });
+    // Il preset copre anche il pannello Rilievo: e' la combinazione dei due a fare la resa.
+    setDepthMm(preset.relief.depthMm);
+    setBaseMm(preset.relief.baseMm);
+    setWidthMm(preset.relief.widthMm);
+    setDecimate(preset.relief.decimate);
+    setMeshProfile(preset.relief.meshProfile);
+    setAdaptiveMesh(preset.relief.adaptiveMesh);
+    setStatus(`Preset ${preset.label} applicato (profondità e rilievo).`);
   };
 
-  const [depthMm, setDepthMm] = useState(5);
-  const [baseMm, setBaseMm] = useState(2);
-  const [widthMm, setWidthMm] = useState(100);
-  const [decimate, setDecimate] = useState(1);
-  const [meshProfile, setMeshProfile] = useState<MeshProfile>("fine");
+  // Stato iniziale = preset "Ritratto": all'avvio l'app parte gia' dai valori validati,
+  // non da default arbitrari diversi da qualunque preset.
+  const [depthMm, setDepthMm] = useState(DEPTH_PRESETS.ritratto.relief.depthMm);
+  const [baseMm, setBaseMm] = useState(DEPTH_PRESETS.ritratto.relief.baseMm);
+  const [widthMm, setWidthMm] = useState(DEPTH_PRESETS.ritratto.relief.widthMm);
+  const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
+  const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
   // Cornice / passepartout / vetro (geometria riusata dal generatore classico)
   const [frameOn, setFrameOn] = useState(false);
@@ -459,7 +465,7 @@ export default function Studio() {
         const p = JSON.parse(reader.result as string);
         if (p.quality) setQuality(p.quality);
         if (p.depthPreset && p.depthPreset in DEPTH_PRESETS) setActiveDepthPreset(p.depthPreset);
-        if (p.pp) setPp({ ...DEPTH_PRESETS["natural-v81"].values, ...p.pp });
+        if (p.pp) setPp({ ...DEPTH_PRESETS.ritratto.values, ...p.pp });
         if (p.appearance) setVisualPreferences({ ...DEFAULT_VISUAL_PREFERENCES, ...p.appearance });
         if (p.relief) {
           setDepthMm(p.relief.depthMm ?? 5);
@@ -775,16 +781,16 @@ export default function Studio() {
           {hmState && (
             <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 10, background: "#0e1116cc", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px" }}>
               <button
-                onClick={() => setRenderStyle((v) => (v === "gesso" ? "studio" : "gesso"))}
-                title="Gesso: materiale opaco e luce radente, per giudicare il rilievo. Studio: resa lucida, per presentarlo."
-                style={{ background: "none", border: "none", color: C.text, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                onClick={() => setRenderStyle((v) => (v === "matcap" ? "gesso" : v === "gesso" ? "studio" : "matcap"))}
+                title="Matcap: luce solidale alla camera, resta ferma mentre ruoti — la migliore per valutare la tridimensionalità. Gesso: opaco con luce radente fissa nello spazio. Studio: resa lucida per presentare il pezzo."
+                style={{ background: "none", border: "none", color: C.text, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, minWidth: 52, textAlign: "left" }}>
                 <Sun size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
-                {renderStyle === "gesso" ? "Gesso" : "Studio"}
+                {renderStyle === "matcap" ? "Matcap" : renderStyle === "gesso" ? "Gesso" : "Studio"}
               </button>
               <input
                 type="range" min={0} max={180} step={1} value={keyLightDeg}
                 onChange={(e) => setKeyLightDeg(Number(e.target.value))}
-                title="Direzione della luce radente"
+                title={renderStyle === "matcap" ? "Direzione del riflesso (resta solidale alla camera)" : "Direzione della luce radente"}
                 style={{ width: 96, accentColor: C.accent, cursor: "pointer" }}
               />
               <span style={{ color: C.hint, fontSize: 11, fontVariantNumeric: "tabular-nums", width: 30 }}>{keyLightDeg}°</span>
@@ -862,12 +868,6 @@ export default function Studio() {
                 </div>
                 <Slider strong label="Dettaglio micro" value={pp.detailMicro} min={0} max={1.5} step={0.1} onChange={(v) => setP("detailMicro", v)} />
                 <Slider label="Raggio dettaglio (σ)" value={pp.detailSigma} min={0.5} max={4} step={0.1} onChange={(v) => setP("detailSigma", v)} />
-                <Slider strong label="Compressione gradienti" value={pp.gradientCompression} min={0} max={12} step={0.5} onChange={(v) => setP("gradientCompression", v)} />
-                <div style={{ fontSize: 10, color: C.hint, margin: "-2px 0 8px", lineHeight: 1.45 }}>
-                  Attenua il dislivello soggetto/sfondo lasciando intatto il dettaglio di
-                  superficie. È quello che rende naso, labbra e palpebre ancora visibili
-                  quando il rilievo è di pochi mm. 0 = disattivata (comportamento 8.4).
-                </div>
                 <Slider strong label="Rilievo locale" value={pp.localAmount} min={0} max={1.5} step={0.1} onChange={(v) => setP("localAmount", v)} />
                 <Slider label="Scala rilievo locale (σ)" value={pp.localSigma} min={1} max={8} step={0.1} onChange={(v) => setP("localSigma", v)} />
                 <Slider label="Volume" value={pp.volumeGamma} min={0.5} max={2} step={0.05} onChange={(v) => setP("volumeGamma", v)} />

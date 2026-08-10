@@ -11,6 +11,7 @@ import { buildPassepartoutRectPhi } from "@/lib/relief/frame/buildPassepartoutRe
 import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
 import { computeAssemblyLayout, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { resampleHeightmapFiltered } from "@/lib/relief/heightmapMesh";
+import { makeMatcapTexture } from "@/lib/relief/render/makeMatcap";
 
 export type HeightmapState = {
   normF32: Float32Array;
@@ -93,7 +94,7 @@ type Props = {
   /** V8.5 — resa del viewport. "gesso" = materiale opaco + luce radente, per
    *  GIUDICARE il rilievo (e' come si valuta un bassorilievo dal vero).
    *  "studio" = resa lucida, per presentare il pezzo. */
-  renderStyle?: "gesso" | "studio";
+  renderStyle?: "gesso" | "studio" | "matcap";
   /** V8.5 — azimut della luce chiave, in gradi. La luce radente rivela incisioni
    *  che con l'illuminazione frontale sono invisibili. */
   keyLightDeg?: number;
@@ -231,6 +232,15 @@ function ReliefPreview3DScene({
 
   useEffect(() => { onLayout?.(layout); }, [layout, onLayout]);
 
+  // Matcap: l'ombreggiatura dipende SOLO dalla normale in spazio-camera, quindi la
+  // luce resta ferma mentre ruoti il pezzo e si giudica la forma. Lo slider della
+  // luce ruota il riflesso dentro la texture invece di muovere una lampada.
+  const matcap = useMemo(
+    () => (renderStyle === "matcap" ? makeMatcapTexture({ lightDeg: keyLightDeg, metallic: 0.8 }) : null),
+    [renderStyle, keyLightDeg]
+  );
+  useEffect(() => () => { matcap?.dispose(); }, [matcap]);
+
   const matGeometry = useMemo(() => {
     if (!hmState) return null;
     if (!mat?.enabled) return null;
@@ -346,7 +356,7 @@ function ReliefPreview3DScene({
   // Resa "gesso": materiale opaco e luce quasi tangente. E' la condizione in cui
   // si giudica un bassorilievo: le incisioni proiettano micro-ombre invece di
   // essere annegate nei riflessi speculari.
-  const clay = renderStyle === "gesso";
+  const clay = renderStyle !== "studio"; // matcap ignora le luci, ma tiene l'ambiente basso
   const keyRad = (keyLightDeg * Math.PI) / 180;
   const keyDist = Math.max(400, width * 4);
   const keyPos: [number, number, number] = [
@@ -445,14 +455,18 @@ function ReliefPreview3DScene({
 >
 
 
-            <meshPhysicalMaterial
-              color={colors.relief}
-              roughness={reliefMat.roughness}
-              metalness={reliefMat.metalness}
-              clearcoat={reliefMat.clearcoat}
-              envMapIntensity={reliefMat.envMapIntensity}
-              wireframe={wireframe}
-            />
+            {matcap ? (
+              <meshMatcapMaterial matcap={matcap} color={colors.relief} wireframe={wireframe} />
+            ) : (
+              <meshPhysicalMaterial
+                color={colors.relief}
+                roughness={reliefMat.roughness}
+                metalness={reliefMat.metalness}
+                clearcoat={reliefMat.clearcoat}
+                envMapIntensity={reliefMat.envMapIntensity}
+                wireframe={wireframe}
+              />
+            )}
           </mesh>
 
           {frameGeometry && (
@@ -463,16 +477,20 @@ function ReliefPreview3DScene({
               castShadow
               receiveShadow
             >
-              <meshPhysicalMaterial
-                color={colors.frame}
-                roughness={frameMat.roughness}
-                metalness={frameMat.metalness}
-                clearcoat={frameMat.clearcoat}
-                clearcoatRoughness={frameMat.clearcoatRoughness}
-                envMapIntensity={frameMat.envMapIntensity}
-                side={THREE.DoubleSide}
-                wireframe={wireframe}
-              />
+              {matcap ? (
+                <meshMatcapMaterial matcap={matcap} color={colors.frame} side={THREE.DoubleSide} wireframe={wireframe} />
+              ) : (
+                <meshPhysicalMaterial
+                  color={colors.frame}
+                  roughness={frameMat.roughness}
+                  metalness={frameMat.metalness}
+                  clearcoat={frameMat.clearcoat}
+                  clearcoatRoughness={frameMat.clearcoatRoughness}
+                  envMapIntensity={frameMat.envMapIntensity}
+                  side={THREE.DoubleSide}
+                  wireframe={wireframe}
+                />
+              )}
             </mesh>
           )}
 
@@ -484,16 +502,20 @@ function ReliefPreview3DScene({
               castShadow
               receiveShadow
             >
-              <meshPhysicalMaterial
-                color={colors.frame}
-                roughness={frameMat.roughness}
-                metalness={frameMat.metalness}
-                clearcoat={frameMat.clearcoat}
-                clearcoatRoughness={frameMat.clearcoatRoughness}
-                envMapIntensity={frameMat.envMapIntensity}
-                side={THREE.DoubleSide}
-                wireframe={wireframe}
-              />
+              {matcap ? (
+                <meshMatcapMaterial matcap={matcap} color={colors.frame} side={THREE.DoubleSide} wireframe={wireframe} />
+              ) : (
+                <meshPhysicalMaterial
+                  color={colors.frame}
+                  roughness={frameMat.roughness}
+                  metalness={frameMat.metalness}
+                  clearcoat={frameMat.clearcoat}
+                  clearcoatRoughness={frameMat.clearcoatRoughness}
+                  envMapIntensity={frameMat.envMapIntensity}
+                  side={THREE.DoubleSide}
+                  wireframe={wireframe}
+                />
+              )}
             </mesh>
           )}
 

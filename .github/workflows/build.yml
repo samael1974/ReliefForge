@@ -30,8 +30,6 @@ jobs:
         run: pnpm assembly:check
       - name: Mesh adattiva (watertight, errore reale, ingombro)
         run: pnpm adaptive:check
-      - name: Algoritmo bassorilievo (round-trip, convergenza, dettaglio conservato)
-        run: pnpm relief:check
 
   windows:
     needs: checks
