@@ -252,8 +252,8 @@ function ReliefPreview3DScene({
     if (!hmState) return null;
     if (!frame?.enabled) return null;
     const out = buildFrameRectPocket({
-      innerWmm: layout.frameBackInnerW,
-      innerHmm: layout.frameBackInnerH,
+      innerWmm: layout.framePocketW,
+      innerHmm: layout.framePocketH,
       thicknessMm: frame.solidMm,
       heightMm: frame.frameHeightMm,
       pocketDepthMm: layout.effectivePocketDepthMm,
@@ -264,7 +264,7 @@ function ReliefPreview3DScene({
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);
     if (!vertices || !indices) return null;
     return toBufferGeometry(vertices, indices);
-  }, [hmState, frame, layout.frameBackInnerW, layout.frameBackInnerH, layout.effectivePocketDepthMm, layout.effectiveLipMm]);
+  }, [hmState, frame, layout.framePocketW, layout.framePocketH, layout.effectivePocketDepthMm, layout.effectiveLipMm]);
 
   // Veletta LED: stesso anello positivo usato nell'export STL, sul fronte
   // interno della cornice. Prima il parametro arrivava alla preview ma non
@@ -273,8 +273,8 @@ function ReliefPreview3DScene({
     if (!hmState || !frame?.enabled || !ledValance?.enabled) return null;
     if (ledValance.widthMm <= 0 || ledValance.depthMm <= 0) return null;
 
-    const frameInnerW = layout.frameBackInnerW;
-    const frameInnerH = layout.frameBackInnerH;
+    const frameInnerW = layout.framePocketW;
+    const frameInnerH = layout.framePocketH;
     const rimW = Math.max(0.5, ledValance.widthMm);
     const rimD = Math.max(0.5, Math.min(ledValance.depthMm, frame.frameHeightMm - 0.5));
     const innerW = Math.max(1, frameInnerW - 2 * rimW);
@@ -294,7 +294,7 @@ function ReliefPreview3DScene({
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);
     if (!vertices || !indices) return null;
     return toBufferGeometry(vertices, indices);
-  }, [hmState, frame, ledValance, layout.frameBackInnerW, layout.frameBackInnerH]);
+  }, [hmState, frame, ledValance, layout.framePocketW, layout.framePocketH]);
 
   useEffect(() => {
     return () => {

@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { buildReliefAssemblyGeometry } from "../src/components/relief/reliefStl";
+import { WELD_BITE } from "../src/lib/relief/frame/assemblyLayout";
 
 /** Heightmap sintetica: cupola centrale + gradino, abbastanza per un test geometrico. */
 function makeHeightmap(w: number, h: number) {
@@ -102,6 +103,14 @@ const cases = [
     args: { ...baseArgs, depthMm: 3, baseMm: 2, mat: null, reliefZmm: 0, matZmm: 0, frameOnly: true },
   },
   {
+    name: "G. REGRESSIONE segnalata da Federico: battuta 3mm non deve entrare nel rilievo",
+    args: {
+      ...baseArgs, depthMm: 5, baseMm: 2, mat: null, reliefZmm: 0, matZmm: 0, toleranceMm: 0.06,
+      frame: { solidMm: 5, frameHeightMm: 21, glassMm: 2 as const, glassClearanceMm: 0.25,
+               lipMm: 3, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.3 },
+    },
+  },
+  {
     name: "E. MESH ADATTIVA + cornice: la cornice deve combaciare come con quella uniforme",
     args: { ...baseArgs, depthMm: 3, baseMm: 2, mat: null, reliefZmm: -1, matZmm: -1, toleranceMm: 0.06 },
   },
@@ -128,6 +137,23 @@ for (const c of cases) {
     console.log(`  passepartout Z    : fronte ${layout.matFrontZ.toFixed(2)} | rilievo fronte ${layout.reliefFrontZ.toFixed(2)} | margine ${(layout.reliefFrontZ - layout.matFrontZ).toFixed(2)} mm`);
   }
   for (const w of layout.warnings) console.log(`  ⚠ ${w}`);
+
+  // La cornice puo' sovrapporsi al rilievo AL MASSIMO del morso di saldatura:
+  // oltre, sta entrando nel bassorilievo (difetto segnalato sulla 8.5.0).
+  if (layout.reliefCoverPerSideMm > WELD_BITE + 1e-6) {
+    console.log(`  ✗ la battuta entra nel rilievo di ${layout.reliefCoverPerSideMm.toFixed(2)} mm/lato (max ${WELD_BITE})`);
+    failures++;
+  } else {
+    console.log(`  ✓ sovrapposizione cornice ${layout.reliefCoverPerSideMm.toFixed(2)} mm/lato (solo saldatura)`);
+  }
+
+  // Il vetro deve stare DAVANTI al rilievo, mai dentro.
+  if (layout.showGlass) {
+    const glassBackZ = layout.glassZ - layout.glassThkMm / 2;
+    const intrusion = layout.reliefFrontZ - glassBackZ;
+    if (intrusion > 1e-6) { console.log(`  ✗ il vetro entra nel rilievo di ${intrusion.toFixed(2)} mm`); failures++; }
+    else console.log(`  ✓ vetro appoggiato sul fronte del rilievo (scarto ${(-intrusion).toFixed(2)} mm)`);
+  }
 
   if (r.open !== 0 || r.nonManifold !== 0) { console.log("  ✗ NON watertight"); failures++; }
 

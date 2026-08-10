@@ -45,7 +45,39 @@ La cornice usava `widthMm · (h / w)` per l'altezza del piano, mentre
 `buildSolidFromHeightmap` usa `widthMm · ((h−1) / (w−1))` (segmenti, non pixel).
 Su 1024×683 sono 0,03 mm di scarto. Ora la formula è la stessa in entrambi.
 
-### 5. Nessuna quota derivata a schermo
+### 5. La battuta vetro entrava DENTRO il bassorilievo
+
+Segnalato da Federico sulla 8.5.0 e corretto: erano **due** compenetrazioni distinte,
+non una.
+
+La cornice ha due fori concentrici: il **vassoio** grande sul lato in vista (dove si
+cala il vetro) e l'**apertura** piccola dietro la battuta. A trattenere il rilievo è
+quella piccola. Il codice però dimensionava sul contenuto il *vassoio*, e ricavava
+l'apertura sottraendo la battuta: con battuta 3 mm l'apertura veniva
+`rilievo − 6 mm`, cioè la cornice entrava di **3,7 mm per lato** nel materiale del
+bassorilievo. Non era "la battuta che copre qualche mm di quadro" — come avevo
+scritto io: era compenetrazione vera. Ora si dimensiona l'apertura sul contenuto e
+il vassoio si ricava aggiungendo la battuta.
+
+In più la cornice era ancorata in Z con la **faccia anteriore** sul fronte del rilievo.
+Ma ciò che deve appoggiarsi al rilievo è la **spalla della battuta**: il vassoio davanti
+serve al vetro, e il vetro va davanti al rilievo. Con quell'ancoraggio la spalla — e con
+lei il vetro — finiva `profondità incasso` mm **dentro** al bassorilievo (3,6 mm nel caso
+segnalato). Ora la spalla cade esattamente sul fronte del rilievo.
+
+Con i parametri del caso reale (bordo 5, altezza 21, battuta 3, incasso 3,6, gioco 0,3):
+
+| | prima | dopo |
+|---|---|---|
+| battuta dentro il rilievo | 3,70 mm/lato | **0,70 mm/lato** (solo saldatura) |
+| vetro dentro il rilievo | 3,60 mm | **0,00 mm** |
+
+I nomi `frameBackInnerW` / `frameFrontInnerW` erano invertiti rispetto alla geometria
+("back" era davanti) ed è probabilmente ciò che ha generato l'errore: rinominati in
+`framePocketW` (vassoio) e `frameApertureW` (apertura). Caso G di `assembly:check`
+blocca la regressione.
+
+### 6. Nessuna quota derivata a schermo
 Il pannello Cornice mostra ora **ingombro esterno**, **apertura visibile**,
 **quanto la cornice copre il rilievo per lato** e l'**apertura del passepartout**,
 più eventuali avvisi. Con i valori di default della 8.4 (battuta 3,2 + morso 1,0) la

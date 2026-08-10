@@ -87,12 +87,14 @@ export type AssemblyLayout = {
   matOuterW: number | null;
   matOuterH: number | null;
 
-  /** Apertura retro/vassoio della cornice (quella che abbraccia il contenuto). */
-  frameBackInnerW: number;
-  frameBackInnerH: number;
-  /** Apertura VISIBILE davanti (dopo la battuta). */
-  frameFrontInnerW: number;
-  frameFrontInnerH: number;
+  /** VASSOIO: apertura grande sul lato in vista, dove si cala il vetro.
+   *  E' il valore che vuole `buildFrameRectPocket` come `innerWmm`. */
+  framePocketW: number;
+  framePocketH: number;
+  /** APERTURA: foro piccolo dietro la battuta. E' quello che TRATTIENE il rilievo
+   *  ed e' cio' che si vede attorno al soggetto. */
+  frameApertureW: number;
+  frameApertureH: number;
   /** Ingombro esterno della cornice. */
   frameOuterW: number;
   frameOuterH: number;
@@ -216,44 +218,53 @@ export function computeAssemblyLayout(input: AssemblyLayoutInput): AssemblyLayou
   const gap = Math.max(0, frame?.reliefGapMm ?? 0.3);
   const bite = welded ? WELD_BITE : 0;
 
-  const frameBackInnerW = frame ? Math.max(1, contentW + 2 * gap - 2 * bite) : 0;
-  const frameBackInnerH = frame ? Math.max(1, contentH + 2 * gap - 2 * bite) : 0;
-
   const effectiveLipMm = frame ? effectiveFrameLipMm(frame.lipMm) : 0;
   const effectivePocketDepthMm = frame
     ? clamp(frame.pocketDepthMm, 0, Math.max(0, frame.frameHeightMm - 0.5))
     : 0;
   const hasPocket = !!frame && effectiveLipMm > 0 && effectivePocketDepthMm > 0;
 
-  const frameFrontInnerW = frame
-    ? (hasPocket ? Math.max(0.5, frameBackInnerW - 2 * effectiveLipMm) : frameBackInnerW)
-    : 0;
-  const frameFrontInnerH = frame
-    ? (hasPocket ? Math.max(0.5, frameBackInnerH - 2 * effectiveLipMm) : frameBackInnerH)
-    : 0;
+  // ⚠️ ORDINE CORRETTO DELLE DUE APERTURE (corretto in V8.5).
+  // La cornice ha due fori concentrici: il VASSOIO grande davanti (dove si cala il
+  // vetro) e l'APERTURA piccola dietro la battuta. A trattenere il rilievo e' quella
+  // PICCOLA, quindi e' quella che va dimensionata sul contenuto; il vassoio si ricava
+  // aggiungendo la battuta.
+  //
+  // Fino alla 8.4 (e nella prima 8.5) era invertito: si dimensionava il VASSOIO sul
+  // contenuto e l'apertura piccola veniva fuori contenuto − 2·battuta. Con battuta 3 mm
+  // la cornice entrava di 3,7 mm per lato DENTRO il rilievo. Non era la battuta che
+  // "copre qualche mm di quadro": era compenetrazione vera.
+  const frameApertureW = frame ? Math.max(1, contentW + 2 * gap - 2 * bite) : 0;
+  const frameApertureH = frame ? Math.max(1, contentH + 2 * gap - 2 * bite) : 0;
 
-  const frameOuterW = frame ? frameBackInnerW + 2 * frame.solidMm : 0;
-  const frameOuterH = frame ? frameBackInnerH + 2 * frame.solidMm : 0;
+  const framePocketW = frame ? (hasPocket ? frameApertureW + 2 * effectiveLipMm : frameApertureW) : 0;
+  const framePocketH = frame ? (hasPocket ? frameApertureH + 2 * effectiveLipMm : frameApertureH) : 0;
 
-  // Cornice ancorata al fronte NOMINALE del rilievo: lo slider "Profondita' rilievo"
-  // muove il rilievo DENTRO una cornice che resta ferma (comportamento voluto).
-  const frameFrontZ = halfT;
+  const frameOuterW = frame ? framePocketW + 2 * frame.solidMm : 0;
+  const frameOuterH = frame ? framePocketH + 2 * frame.solidMm : 0;
+
+  // Ancoraggio in Z. Con la battuta, cio' che deve appoggiarsi al fronte del rilievo
+  // NON e' la faccia anteriore della cornice ma la SPALLA della battuta: il vassoio
+  // davanti serve al vetro, e il vetro va DAVANTI al rilievo, non dentro.
+  // Prima la cornice era ancorata col fronte, quindi la spalla (e con lei il vetro)
+  // finiva `pocketDepth` mm dentro al bassorilievo.
+  const frameFrontZ = halfT + (hasPocket ? effectivePocketDepthMm : 0);
   const frameBackZ = frame ? frameFrontZ - frame.frameHeightMm : frameFrontZ;
 
   // --- Vetro ---
   const glassThkMm = frame ? Math.max(1, frame.glassMm ?? 2) : 2;
   const glassClearance = frame ? Math.max(0, frame.glassClearanceMm ?? 0) : 0;
-  const glassW = Math.max(1, frameBackInnerW - 2 * glassClearance);
-  const glassH = Math.max(1, frameBackInnerH - 2 * glassClearance);
+  const glassW = Math.max(1, framePocketW - 2 * glassClearance);
+  const glassH = Math.max(1, framePocketH - 2 * glassClearance);
   const glassZ = hasPocket
     ? frameFrontZ - effectivePocketDepthMm + glassThkMm / 2
     : frameFrontZ - 0.8 - glassThkMm / 2;
   const showGlass = hasPocket;
 
   // --- Diagnostica ---
-  const visibleApertureW = frame ? frameFrontInnerW : reliefW;
-  const visibleApertureH = frame ? frameFrontInnerH : reliefH;
-  const reliefCoverPerSideMm = frame ? (reliefW - frameFrontInnerW) / 2 : 0;
+  const visibleApertureW = frame ? frameApertureW : reliefW;
+  const visibleApertureH = frame ? frameApertureH : reliefH;
+  const reliefCoverPerSideMm = frame ? (reliefW - frameApertureW) / 2 : 0;
 
   const outerW = frame ? frameOuterW : contentW;
   const outerH = frame ? frameOuterH : contentH;
@@ -261,12 +272,11 @@ export function computeAssemblyLayout(input: AssemblyLayoutInput): AssemblyLayou
   const zMax = Math.max(reliefFrontZ, frame ? frameFrontZ : -Infinity);
   const outerDepthMm = zMax - zMin;
 
-  if (frame && reliefCoverPerSideMm > 0 && !mat) {
+  if (frame && reliefCoverPerSideMm > WELD_BITE + 0.01 && !mat) {
     warnings.push(
       `La cornice copre ${reliefCoverPerSideMm.toFixed(1)} mm di rilievo per lato ` +
-      `(apertura visibile ${visibleApertureW.toFixed(1)} x ${visibleApertureH.toFixed(1)} mm ` +
-      `su un rilievo di ${reliefW.toFixed(1)} x ${reliefH.toFixed(1)} mm). ` +
-      `Riduci "Larghezza battuta" per scoprirne di piu'.`
+      `(apertura ${visibleApertureW.toFixed(1)} x ${visibleApertureH.toFixed(1)} mm ` +
+      `su un rilievo di ${reliefW.toFixed(1)} x ${reliefH.toFixed(1)} mm).`
     );
   }
   if (frame && reliefFrontZ > frameFrontZ + 0.01) {
@@ -286,8 +296,8 @@ export function computeAssemblyLayout(input: AssemblyLayoutInput): AssemblyLayou
     matBandsMm,
     contentW, contentH,
     matInnerW, matInnerH, matOuterW, matOuterH,
-    frameBackInnerW, frameBackInnerH,
-    frameFrontInnerW, frameFrontInnerH,
+    framePocketW, framePocketH,
+    frameApertureW, frameApertureH,
     frameOuterW, frameOuterH,
     effectiveLipMm, effectivePocketDepthMm, hasPocket,
     centerY,

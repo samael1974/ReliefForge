@@ -303,8 +303,8 @@ export async function buildReliefAssemblyGeometry(
   relief.translate(0, 0, reliefZmm);
 
   const reliefCenterY = L.centerY;
-  const frameBackInnerW = L.frameBackInnerW;
-  const frameBackInnerH = L.frameBackInnerH;
+  const framePocketW = L.framePocketW;
+  const framePocketH = L.framePocketH;
 
   if (L.warnings.length) console.warn("[STL] avvisi assieme:\n - " + L.warnings.join("\n - "));
 
@@ -355,8 +355,8 @@ export async function buildReliefAssemblyGeometry(
     // saldato alla cornice su tutto il perimetro.
     if (!frameOnly && frame && (frame.cornerRadiusMm ?? 0) > 0.01 && acc) {
       const Rclip = Math.max(0, (frame.cornerRadiusMm ?? 0) - frame.solidMm) + WELD_BITE;
-      const clipW = frameBackInnerW + 2 * WELD_BITE;
-      const clipH = frameBackInnerH + 2 * WELD_BITE;
+      const clipW = framePocketW + 2 * WELD_BITE;
+      const clipH = framePocketH + 2 * WELD_BITE;
       const clip = roundedBox(wasm, clipW, clipH, 400, Rclip, FRAME_CORNER_SEGMENTS)
         .translate([0, reliefCenterY, 0]);
       acc = acc.intersect(clip);
@@ -370,16 +370,16 @@ export async function buildReliefAssemblyGeometry(
     //      gradino di battuta strutturale su cui appoggia il vetro.
     //   Se lipMm o pocketDepthMm sono 0 la cornice resta simmetrica (legacy).
     if (frame) {
-      const backInnerW = frameBackInnerW; // apertura retro (vassoio) -> combacia col passepartout
-      const backInnerH = frameBackInnerH;
+      const backInnerW = framePocketW; // apertura retro (vassoio) -> combacia col passepartout
+      const backInnerH = framePocketH;
       const frH = frame.frameHeightMm;
       // Battuta, vassoio e apertura visibile vengono TUTTI dal layout condiviso.
       const lip = L.effectiveLipMm;
       const pocketDepth = L.effectivePocketDepthMm;
       const hasPocket = L.hasPocket;
 
-      const frontInnerW = L.frameFrontInnerW;
-      const frontInnerH = L.frameFrontInnerH;
+      const frontInnerW = L.frameApertureW;
+      const frontInnerH = L.frameApertureH;
 
       // Raggi concentrici: bordo di larghezza costante attorno alle curve.
       const R = Math.max(0, frame.cornerRadiusMm ?? 0);
@@ -414,8 +414,8 @@ export async function buildReliefAssemblyGeometry(
     if (frame && ledValance?.enabled && ledValance.widthMm > 0 && ledValance.depthMm > 0) {
       const rimW = ledValance.widthMm;
       const rimD = Math.min(ledValance.depthMm, frame.frameHeightMm - 0.5);
-      const innerW = frameBackInnerW;
-      const innerH = frameBackInnerH;
+      const innerW = framePocketW;
+      const innerH = framePocketH;
       const R = Math.max(0, frame.cornerRadiusMm ?? 0);
       const rOut = Math.max(0, R - frame.solidMm);
       const rIn = Math.max(0, R - frame.solidMm - rimW);
@@ -428,8 +428,8 @@ export async function buildReliefAssemblyGeometry(
     // Canale del vetro a baionetta: alloggiamento sui lati interni della cornice, APERTO IN ALTO.
     // Usa l'apertura FRONTE (la slot vive nel bordo frontale della cornice, sopra il vassoio).
     if (frame && glassSlot?.enabled) {
-      const frontW = L.frameFrontInnerW;
-      const frontH = L.frameFrontInnerH;
+      const frontW = L.frameApertureW;
+      const frontH = L.frameApertureH;
       const grooveDepth = Math.min(Math.max(0.8, glassSlot.grooveDepthMm), Math.max(1, frame.solidMm - 1.0));
       const slotThk = Math.max(1, glassSlot.slotThicknessMm);
       const frontWall = 1.5;
