@@ -3,7 +3,7 @@ RELIEFFORGE V8.7 - ISTRUZIONI
 
 PER L'UTENTE FINALE
 -------------------
-1. Scarica ReliefForge-Setup-8.7.0.exe (dalla pagina Releases su GitHub).
+1. Scarica ReliefForge-Setup-8.7.1.exe (dalla pagina Releases su GitHub).
 2. Doppio clic sul file e segui la procedura guidata.
 3. Avvia ReliefForge dall'icona sul Desktop o dal menu Start.
 
@@ -68,7 +68,7 @@ PER LO SVILUPPATORE: CREARE L'INSTALLER
 Doppio clic su CREA_SETUP_EXE.bat. Lo script:
   1. installa le dipendenze (pnpm install)
   2. compila il frontend (vite build --base=./)
-  3. crea release\ReliefForge-Setup-8.7.0.exe (electron-builder, NSIS)
+  3. crea release\ReliefForge-Setup-8.7.1.exe (electron-builder, NSIS)
 Log completo in crea_setup_log.txt. Non chiudere la finestra nera
 finche' non compare FATTO!
 

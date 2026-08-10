@@ -62,7 +62,7 @@ echo OK > build_ok.txt
 echo.
 echo ============================================================
 echo   FATTO! Installer creato in:
-echo   release\ReliefForge-Setup-8.7.0.exe
+echo   release\ReliefForge-Setup-8.7.1.exe
 echo ============================================================
 echo.
 start "" explorer "%~dp0release"

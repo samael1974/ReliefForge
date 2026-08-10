@@ -457,14 +457,17 @@ export async function buildReliefAssemblyGeometry(
   return { geometry: merged, layout: L };
 }
 
-/** Esporta UN STL con rilievo + (passepartout) + (cornice), fuso in un corpo watertight. */
-export async function downloadReliefAssemblyStl(args: AssemblyArgs) {
+/** Esporta UN STL con rilievo + (passepartout) + (cornice), fuso in un corpo watertight.
+ *  Ritorna il conteggio REALE dei triangoli scritti: con la mesh adattiva una stima
+ *  basata sulla griglia sarebbe sbagliata di un ordine di grandezza. */
+export async function downloadReliefAssemblyStl(args: AssemblyArgs): Promise<{ triangles: number }> {
   const { geometry } = await buildReliefAssemblyGeometry(args);
   const bin = geometryToBinaryStl(geometry);
   downloadArrayBuffer(bin, args.fileName ?? "reliefforge-cornice");
+  return { triangles: new DataView(bin).getUint32(80, true) };
 }
 
-export function downloadReliefStlBinary(args: DownloadArgs) {
+export function downloadReliefStlBinary(args: DownloadArgs): { triangles: number } {
   const {
     hm,
     widthMm,
@@ -517,4 +520,5 @@ geom.computeVertexNormals();
 
   const bin = geometryToBinaryStl(geom);
   downloadArrayBuffer(bin, fileName ?? "reliefforge");
+  return { triangles: new DataView(bin).getUint32(80, true) };
 }

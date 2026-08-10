@@ -579,11 +579,13 @@ export default function Studio() {
     try {
       const hm = prepareExportHeightmap();
       if (!hm) return;
-      downloadReliefStlBinary({
+      const { triangles } = downloadReliefStlBinary({
         hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm,
         outputMode: "relief" as any, baseStyle: "flat" as any, fileName: "reliefforge",
       });
-      setStatus(`STL esportato: ${hm.w}×${hm.h}, circa ${formatTriangleCount(estimateCompactSolidTriangles(hm.w, hm.h))} triangoli.`);
+      // Conteggio REALE: con la mesh adattiva la stima sulla griglia sbagliava di
+      // un ordine di grandezza (dichiarava 1,4 M su un file da ~40k).
+      setStatus(`STL esportato: ${hm.w}×${hm.h}, ${formatTriangleCount(triangles)} triangoli (${((84 + triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export STL: " + (e?.message ?? String(e))); }
   }, [hmState, widthMm, depthMm, baseMm, prepareExportHeightmap]);
 
@@ -594,7 +596,7 @@ export default function Studio() {
     try {
       const hm = prepareExportHeightmap();
       if (!hm) return;
-      await downloadReliefAssemblyStl({
+      const res = await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
         toleranceMm: exportToleranceMm,
         fileName: "reliefforge-cornice", reliefZmm: reliefZ, matZmm: matZ,
@@ -603,7 +605,7 @@ export default function Studio() {
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
         frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameP.cornerRadiusMm, reliefGapMm: frameP.reliefGapMm } : null,
       } as any);
-      setStatus("STL cornice+rilievo (fuso) esportato.");
+      setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
   }, [hmState, frameOn, matOn, glassOn, frameP, matP, glassP, widthMm, depthMm, baseMm, prepareExportHeightmap, reliefZ, matZ, rimOn, rimW, rimD]);
 
@@ -847,7 +849,7 @@ export default function Studio() {
           {hmState && (frameOn || matOn) && (
             <button
               onClick={() => setPreviewWelded((v) => !v)}
-              title="L'anteprima mostra esattamente il file che esporti: pezzo unico saldato oppure pezzi separati."
+              title="Fuso = quello che produce «Cornice + rilievo (fuso)»: un corpo unico, la cornice morde 1 mm nel rilievo per saldarsi. Separati = quello che produce «Solo cornice»: pezzi distinti, con il gioco impostato attorno al rilievo."
               style={{ position: "absolute", top: 12, left: 132, zIndex: 10, display: "flex", alignItems: "center", gap: 6, background: "#0e1116cc", color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
               <FrameIcon size={14} /> {previewWelded ? "Anteprima: fuso" : "Anteprima: separati"}
             </button>
@@ -1083,9 +1085,19 @@ export default function Studio() {
                 <button onClick={exportFrameOnly} disabled={!hmState || (!frameOn && !matOn)} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && (frameOn || matOn) ? 1 : 0.5 }}>
                   <Download size={15} /> Solo cornice (STL separato)
                 </button>
-                <button onClick={exportReliefMat} disabled={!hmState || !matOn} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && matOn ? 1 : 0.5 }}>
+                <button
+                  onClick={exportReliefMat}
+                  disabled={!hmState || !matOn}
+                  title={matOn ? "Esporta rilievo e passepartout saldati, senza la cornice." : "Serve il passepartout attivo: senza, questo export coinciderebbe con l'STL del solo rilievo (step Esporta)."}
+                  style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && matOn ? 1 : 0.5 }}>
                   <Download size={15} /> Rilievo + passepartout (senza cornice)
                 </button>
+                {hmState && !matOn && (
+                  <div style={{ fontSize: 10, color: C.hint, marginTop: 5, lineHeight: 1.45 }}>
+                    Disattivato perché il <b style={{ color: C.muted }}>passepartout è spento</b>. Senza passepartout
+                    questo file sarebbe identico all'STL del solo rilievo, che trovi nello step <b style={{ color: C.muted }}>Esporta</b>.
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: C.hint, marginTop: 8, lineHeight: 1.5 }}>
                   La <b style={{ color: C.muted }}>battuta a L</b> crea un appoggio continuo sui quattro lati. Lo <b style={{ color: C.muted }}>scasso a U</b> resta disponibile come alternativa aperta in alto.
                 </div>
