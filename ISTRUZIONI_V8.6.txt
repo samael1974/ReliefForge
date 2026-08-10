@@ -1,0 +1,86 @@
+RELIEFFORGE V8.6 - ISTRUZIONI
+=============================
+
+PER L'UTENTE FINALE
+-------------------
+1. Scarica ReliefForge-Setup-8.6.0.exe (dalla pagina Releases su GitHub).
+2. Doppio clic sul file e segui la procedura guidata.
+3. Avvia ReliefForge dall'icona sul Desktop o dal menu Start.
+
+Non servono Node.js, pnpm o altri strumenti: l'installer contiene tutto.
+
+Nota: alla prima esecuzione Windows SmartScreen puo' mostrare un avviso
+perche' l'installer non e' firmato digitalmente. Clicca su
+"Ulteriori informazioni" e poi "Esegui comunque".
+
+NOVITA' DELLA V8.6
+------------------
+CORNICE E PASSEPARTOUT
+- Il passepartout esportato ora e' un vero anello a gradoni CON apertura.
+  Nella 8.4 l'STL conteneva invece una lastra piena: era il motivo per cui il
+  bassorilievo finiva "inglobato nel passepartout".
+- Il passepartout non puo' piu' sommergere il rilievo: resta sempre almeno
+  0,8 mm di rilievo davanti, e se i parametri non lo consentono compare un avviso.
+- Anteprima ed export usano le stesse quote. Nella 8.4 divergevano di 2 mm per
+  lato nel caso piu' comune (cornice senza passepartout, export fuso).
+- Nuovo pulsante nel viewport: "Anteprima: fuso / separati". Mostra esattamente
+  il file che stai per esportare, non una via di mezzo.
+- Nuovo riquadro "Quote risultanti" nel pannello Cornice: ingombro esterno,
+  apertura visibile, quanto la cornice copre il rilievo per lato, piu' gli avvisi.
+
+  IMPORTANTE: con i valori di default leggerai che la cornice copre circa
+  4 mm di rilievo per lato. Non e' un difetto: e' la battuta, e una cornice
+  vera copre qualche mm di quadro. Nella 8.4 semplicemente non te lo diceva
+  nessuno. Se e' troppo, riduci "Larghezza battuta".
+
+VISTA MATCAP (predefinita)
+- Il viewport si apre con un'ombreggiatura che dipende solo dall'orientamento
+  della superficie rispetto alla camera: ruotando il pezzo la luce resta FERMA,
+  quindi si giudica la forma invece dell'illuminazione. E' la vista usata dai
+  software di scultura.
+- Il pulsante in alto a destra cicla Matcap -> Gesso -> Studio. Lo slider accanto
+  ruota la direzione del riflesso.
+
+PRESET
+- Un solo preset, "Ritratto", tarato su una lavorazione reale, che imposta SIA la
+  Profondita' SIA il Rilievo. L'app parte gia' da quei valori.
+- I quattro preset storici (V8.1/V8.3) sono stati rimossi: erano tarati su una
+  pipeline che non esiste piu'.
+
+MESH ADATTIVA
+- Nuovo motore che mette i triangoli dove c'e' dettaglio invece di spalmarli
+  anche sullo sfondo piatto. Su un ritratto tipico l'STL passa da decine di MB
+  a pochi MB, con la stessa resa in stampa e l'export molto piu' rapido.
+- I profili mesh ora sono tolleranze geometriche:
+    Bilanciato 0,12 mm | Fine 0,06 mm | Massima 0,03 mm
+- Si disattiva con l'interruttore "Mesh adattiva" nel pannello Rilievo.
+
+PER LO SVILUPPATORE: CREARE L'INSTALLER
+---------------------------------------
+Doppio clic su CREA_SETUP_EXE.bat. Lo script:
+  1. installa le dipendenze (pnpm install)
+  2. compila il frontend (vite build --base=./)
+  3. crea release\ReliefForge-Setup-8.6.0.exe (electron-builder, NSIS)
+Log completo in crea_setup_log.txt. Non chiudere la finestra nera
+finche' non compare FATTO!
+
+Il numero di versione si cambia in UN SOLO posto: package.json.
+Intestazione dello Studio, salvataggio progetto e nome dell'installer lo
+leggono da li'.
+
+SVILUPPO
+--------
+pnpm install
+pnpm electron:dev     (app desktop con dev server e DevTools)
+
+VERIFICHE
+---------
+pnpm assembly:check   (cornice + passepartout: watertight, quote, margini)
+pnpm adaptive:check   (mesh adattiva: watertight, errore reale, ingombro)
+
+PROFILO CONSIGLIATO
+-------------------
+- Modello AI: Massima (se gia' scaricato e il PC lo regge).
+- Depth: Ritratto V8.1 per volti; Scultura V8.3 per statue e oggetti.
+- Mesh: Fine, con "Mesh adattiva" attiva.
+- Decimazione manuale: 1x (con la mesh adattiva non serve alzarla).

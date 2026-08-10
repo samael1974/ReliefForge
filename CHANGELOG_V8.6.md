@@ -1,4 +1,12 @@
-# Changelog V8.5 — Cornice e passepartout
+# Changelog V8.6
+
+Prima release distribuita dopo la 8.4. Durante lo sviluppo sono stati costruiti piu'
+installer marcati 8.5.0, tutti diversi fra loro: da qui in avanti **ogni installer
+consegnato ha un numero di versione nuovo**, cosi' non e' mai ambiguo quale build si
+sta usando. Il numero si cambia in un solo posto (`package.json`) e lo leggono
+intestazione, salvataggio progetto e installer.
+
+## Cornice e passepartout
 
 Rilascio di correzione geometrica. Il tema è uno solo: **quello che vedi in anteprima
 è quello che esci in STL**, e il bassorilievo non viene più mangiato dagli altri pezzi.

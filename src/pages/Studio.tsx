@@ -100,7 +100,7 @@ const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values
       localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
       segment: true, segThreshold: 0.1, segFeather: 0,
     },
-    relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: false },
+    relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: true },
   },
 };
 
