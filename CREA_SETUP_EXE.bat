@@ -1,10 +1,10 @@
 @echo off
-title ReliefForge 8.7 - Creazione setup .exe (NON CHIUDERE questa finestra)
+title ReliefForge 8.8 - Creazione setup .exe (NON CHIUDERE questa finestra)
 cd /d "%~dp0"
 if exist build_ok.txt del build_ok.txt
 
 echo ============================================================
-echo   ReliefForge 8.7 - compilazione completa + SETUP .EXE
+echo   ReliefForge 8.8 - compilazione completa + SETUP .EXE
 echo   NON chiudere questa finestra: servono alcuni minuti.
 echo   Al termine comparira' FATTO! e si aprira' la cartella.
 echo ============================================================
@@ -62,7 +62,7 @@ echo OK > build_ok.txt
 echo.
 echo ============================================================
 echo   FATTO! Installer creato in:
-echo   release\ReliefForge-Setup-8.7.1.exe
+echo   release\ReliefForge-Setup-8.8.0.exe
 echo ============================================================
 echo.
 start "" explorer "%~dp0release"

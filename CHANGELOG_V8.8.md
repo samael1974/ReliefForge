@@ -1,4 +1,4 @@
-# Changelog V8.7
+# Changelog V8.8
 
 Prima release distribuita dopo la 8.4. Durante lo sviluppo sono stati costruiti piu'
 installer marcati 8.5.0, tutti diversi fra loro: da qui in avanti **ogni installer
@@ -6,7 +6,38 @@ consegnato ha un numero di versione nuovo**, cosi' non e' mai ambiguo quale buil
 sta usando. Il numero si cambia in un solo posto (`package.json`) e lo leggono
 intestazione, salvataggio progetto e installer.
 
-## Livelli sulla depth map (V8.7)
+## Curva sulla depth map (V8.8)
+
+I livelli a due punti della 8.7 sono stati sostituiti da una **curva tonale** completa,
+con l'istogramma sullo sfondo. Non si perde niente: i livelli *sono* la curva con i soli
+estremi, quindi trascinare il punto in basso a sinistra resta "alza il fondo".
+
+Il motivo per cui serviva: su un istogramma **bimodale** — un ammasso per lo sfondo e
+uno per il soggetto — con i livelli si può solo tagliare agli estremi. Con la curva si
+schiaccia la gobba dello sfondo e si allarga quella del soggetto nella stessa
+operazione, dedicando quasi tutta l'altezza fisica al viso.
+
+**La curva è vincolata a essere monotona crescente.** Su un campo di altezze una curva
+che scende inverte il rilievo e crea sottosquadri. Il vincolo è applicato due volte: sui
+punti di controllo e nell'interpolazione, che è quella di **Fritsch–Carlson** e non una
+spline qualsiasi. Una spline normale (Catmull-Rom, natural) può sbordare fra due punti e
+generare gobbe o avvallamenti mai richiesti: su un'immagine è un artefatto estetico, su
+un pezzo stampato è materiale vero.
+
+Verificato da `pnpm curve:check`: identità esatta a curva di default, monotonia garantita
+anche con punti avversari (incluso un punto trascinato all'indietro), equivalenza ai
+livelli a 1,67e-16, uscita sempre in [0..1].
+
+Uso: clic = aggiungi punto, trascina = muovi, doppio clic = togli. "Auto" e "Ripristina"
+riportano ai livelli automatici.
+
+### Nota su una posizione che avevo preso e che era sbagliata
+Nella 8.7 avevo escluso le curve sostenendo che "su un'altezza fisica producono gradini
+in stampa". Obiezione troppo generica: il banding viene dalle immagini a 8 bit, mentre la
+depth map qui è float32. Il rischio reale era solo la non-monotonia, che si previene
+vincolandola — ed è quello che fa questa implementazione.
+
+## Livelli sulla depth map (V8.7, sostituiti dalla curva)
 
 La depth map **è** il campo di altezze: decidere quale profondità diventa il piano di
 fondo e quale il punto più alto è la scelta che determina la resa. Fino alla 8.6 quel
