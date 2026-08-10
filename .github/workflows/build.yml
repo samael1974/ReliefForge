@@ -3,10 +3,37 @@ name: Build installers
 on:
   workflow_dispatch:
   push:
+    branches: ["**"]
     tags: ["v*"]
+  pull_request:
 
 jobs:
+  # I controlli girano su OGNI push e PR, non solo sui tag: e' il motivo per cui
+  # esistono. La regressione della battuta vetro (V8.5.1) sarebbe passata inosservata
+  # perche' la CI costruiva soltanto gli installer.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Attiva pnpm
+        run: corepack enable
+      - name: Installa dipendenze
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit -p tsconfig.app.json
+      - name: Build frontend
+        run: pnpm exec vite build
+      - name: Assieme cornice + passepartout (watertight, quote, battuta, vetro, angoli)
+        run: pnpm assembly:check
+      - name: Mesh adattiva (watertight, errore reale, ingombro)
+        run: pnpm adaptive:check
+
   windows:
+    needs: checks
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +56,8 @@ jobs:
           path: release/ReliefForge-Setup-*.exe
 
   macos:
+    needs: checks
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

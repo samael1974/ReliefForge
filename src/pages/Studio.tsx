@@ -10,6 +10,8 @@ import {
   Settings, RotateCcw, Save,
 } from "lucide-react";
 import ReliefPreview3D, { type HeightmapState } from "@/components/relief/ReliefPreview3D";
+import type { AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
+import DepthLevels from "@/components/relief/DepthLevels";
 import { downloadReliefStlBinary, downloadReliefAssemblyStl } from "@/components/relief/reliefStl";
 import { estimateDepth } from "@/lib/relief/depth/estimateDepth";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
@@ -35,6 +37,8 @@ type PP = {
   detailMicro: number; detailSigma: number; skinDenoise: number; volumeGamma: number;
   localAmount: number; localSigma: number; contrastPct: number; invert: boolean;
   segment: boolean; segThreshold: number; segFeather: number;
+  /** V8.6 — livelli sulla depth map. auto = come prima (min/max del soggetto). */
+  levelsAuto: boolean; levelsBlack: number; levelsWhite: number;
 };
 type CommercialMessage = {
   enabled: boolean;
@@ -50,7 +54,7 @@ type VisualPreferences = {
   frameColor: string;
   matColor: string;
 };
-type DepthPresetId = "portrait-v81" | "natural-v81" | "sculpt-v83" | "photo-v83";
+type DepthPresetId = "ritratto";
 type DepthPresetSelection = DepthPresetId | "custom";
 
 const DARK_C = {
@@ -74,28 +78,36 @@ const DEFAULT_VISUAL_PREFERENCES: VisualPreferences = {
   matColor: "#E9E3D6",
 };
 
-const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values: PP }> = {
-  "portrait-v81": {
-    label: "Ritratto V8.1",
-    hint: "Pelle regolare, lineamenti leggibili e volume morbido.",
-    values: { detailMicro: 0.2, detailSigma: 1.8, skinDenoise: 4, volumeGamma: 0.8, localAmount: 1.5, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
-  },
-  "natural-v81": {
-    label: "Naturale V8.1",
-    hint: "Equilibrio originale della versione stabile.",
-    values: { detailMicro: 0.5, detailSigma: 1.8, skinDenoise: 3, volumeGamma: 0.8, localAmount: 0.1, localSigma: 3, contrastPct: 0, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
-  },
-  "sculpt-v83": {
-    label: "Scultura V8.3",
-    hint: "Volumi netti per statue, incisioni e soggetti su fondo uniforme.",
-    values: { detailMicro: 0.4, detailSigma: 1.4, skinDenoise: 3.2, volumeGamma: 0.9, localAmount: 0.65, localSigma: 3.2, contrastPct: 0.5, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
-  },
-  "photo-v83": {
-    label: "Fotografia V8.3",
-    hint: "Più micro-dettaglio, con filtro anti-rumore prima della mesh.",
-    values: { detailMicro: 0.65, detailSigma: 1.6, skinDenoise: 2.8, volumeGamma: 0.9, localAmount: 0.75, localSigma: 3.5, contrastPct: 1, invert: false, segment: false, segThreshold: 0.35, segFeather: 1.5 },
+/**
+ * Preset di lavoro. V8.5: i quattro preset storici (V8.1/V8.3) erano tarati su una
+ * pipeline che non esiste piu' e non producevano risultati utili; sostituiti da UN
+ * preset ricavato da una lavorazione reale riuscita.
+ *
+ * A differenza di prima il preset copre ENTRAMBI i pannelli: ripristinare solo la
+ * Profondita' e lasciare fuori profondita'/base/larghezza rendeva il preset inutile,
+ * perche' la resa dipende dalla combinazione dei due.
+ *
+ * Nuovi preset si aggiungono solo dopo aver verificato i valori su un soggetto vero.
+ */
+type PresetRelief = {
+  depthMm: number; baseMm: number; widthMm: number;
+  decimate: number; meshProfile: MeshProfile; adaptiveMesh: boolean;
+};
+
+const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values: PP; relief: PresetRelief }> = {
+  ritratto: {
+    label: "Ritratto",
+    hint: "Volto su fondo scuro: soggetto isolato, sfondo piatto, lineamenti leggibili. Tarato su una lavorazione reale.",
+    values: {
+      detailMicro: 0.15, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
+      localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
+      segment: true, segThreshold: 0.1, segFeather: 0,
+      levelsAuto: true, levelsBlack: 0, levelsWhite: 1,
+    },
+    relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: true },
   },
 };
+
 const DEFAULT_COMMERCIAL_MESSAGE: CommercialMessage = {
   enabled: true,
   title: "Sostieni ReliefForge",
@@ -142,26 +154,61 @@ function dl(blob: Blob, name: string) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
 }
 
+/** Maschera del soggetto dal solo depth. null quando la segmentazione e' spenta. */
+function buildSegmentMask(d: Float32Array, w: number, h: number, p: PP): Float32Array | null {
+  if (!p.segment) return null;
+  const n = w * h;
+  let mask = new Float32Array(n);
+  for (let i = 0; i < n; i++) mask[i] = d[i] > p.segThreshold ? 1 : 0;
+  if (p.segFeather > 0) mask = gaussianBlurF32(mask, w, h, p.segFeather);
+  return mask;
+}
+
+/** Livelli automatici: min/max del soggetto (o nessun rimappaggio senza segmentazione).
+ *  E' esattamente cio' che faceva la 8.5, qui reso esplicito e mostrabile in UI. */
+function autoLevels(d: Float32Array, mask: Float32Array | null, p: PP): { lo: number; hi: number } {
+  if (!p.segment || !mask) return { lo: 0, hi: 1 };
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < d.length; i++) if (mask[i] > 0.5) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!isFinite(lo) || !isFinite(hi) || hi - lo < 1e-6) return { lo: 0, hi: 1 };
+  return { lo, hi };
+}
+
+/** Depth denoised + istogramma + livelli automatici, per il pannello dei livelli. */
+export function depthLevelsStats(raw: Raw, p: PP, bins = 128) {
+  const { w, h } = raw;
+  const d = p.skinDenoise > 0 ? gaussianBlurF32(raw.depth, w, h, p.skinDenoise) : raw.depth;
+  const histogram = new Uint32Array(bins);
+  for (let i = 0; i < d.length; i++) {
+    const b = Math.min(bins - 1, Math.max(0, (d[i] * bins) | 0));
+    histogram[b]++;
+  }
+  const mask = buildSegmentMask(d, w, h, p);
+  return { histogram, ...autoLevels(d, mask, p) };
+}
+
 function processHeightmap(raw: Raw, p: PP): Float32Array {
   const { w, h } = raw;
   const n = w * h;
   let d = p.skinDenoise > 0 ? gaussianBlurF32(raw.depth, w, h, p.skinDenoise) : raw.depth.slice();
 
   // Segmentazione dal solo depth: lo sfondo (lontano = valori bassi) sotto soglia
-  // viene appiattito a 0 e il soggetto viene ri-steso su tutto 0..1 -> bombatura piena.
-  let mask: Float32Array | null = null;
-  if (p.segment) {
-    mask = new Float32Array(n);
-    for (let i = 0; i < n; i++) mask[i] = d[i] > p.segThreshold ? 1 : 0;
-    if (p.segFeather > 0) mask = gaussianBlurF32(mask, w, h, p.segFeather);
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < n; i++) if (mask[i] > 0.5) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
-    if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+  // viene appiattito a 0.
+  const mask = buildSegmentMask(d, w, h, p);
+
+  // V8.6 — LIVELLI. Fino alla 8.5 la segmentazione ri-stendeva il soggetto su 0..1
+  // con min/max automatici e non c'era modo di intervenire. Ora quel calcolo e' il
+  // caso "auto" di un controllo esplicito: trascinando i punti sull'istogramma si
+  // sceglie quale profondita' diventa il fondo e quale la cima.
+  const auto = autoLevels(d, mask, p);
+  const lo = p.levelsAuto ? auto.lo : Math.min(p.levelsBlack, p.levelsWhite - 1e-3);
+  const hi = p.levelsAuto ? auto.hi : Math.max(p.levelsWhite, p.levelsBlack + 1e-3);
+  if (mask || lo !== 0 || hi !== 1) {
     const span = Math.max(1e-6, hi - lo);
     const o = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      let s = (d[i] - lo) / span; s = s < 0 ? 0 : s > 1 ? 1 : s;
-      o[i] = s * mask[i];
+      let v = (d[i] - lo) / span; v = v < 0 ? 0 : v > 1 ? 1 : v;
+      o[i] = mask ? v * mask[i] : v;
     }
     d = o;
   }
@@ -229,6 +276,17 @@ export default function Studio() {
   const [commercialDraft, setCommercialDraft] = useState<CommercialMessage>(() => loadCommercialMessage());
   const projRef = useRef<HTMLInputElement | null>(null);
   const [wire, setWire] = useState(false); // modalità wireframe del viewport
+  // V8.5: l'anteprima mostra ESATTAMENTE uno dei due export. Fuso = pezzo unico
+  // saldato; Separati = cornice e rilievo da stampare a parte, con il gioco vero.
+  const [previewWelded, setPreviewWelded] = useState(true);
+  // V8.5: mesher adattivo per l'export (triangoli dove serve). Spegnilo per tornare
+  // alla griglia uniforme della 8.4.
+  const [adaptiveMesh, setAdaptiveMesh] = useState(DEPTH_PRESETS.ritratto.relief.adaptiveMesh);
+  // V8.5: resa del viewport. "gesso" e' la condizione in cui si giudica davvero
+  // un bassorilievo; "studio" serve a presentarlo.
+  const [renderStyle, setRenderStyle] = useState<"gesso" | "studio" | "matcap">("matcap");
+  const [keyLightDeg, setKeyLightDeg] = useState(35);
+  const [layout, setLayout] = useState<AssemblyLayout | null>(null);
 
   const C = visualPreferences.theme === "dark" ? DARK_C : LIGHT_C;
   const previewColors = useMemo(() => ({
@@ -252,25 +310,34 @@ export default function Studio() {
 
   const [step, setStep] = useState<Step>("image");
   const [quality, setQuality] = useState<Quality>("large");
-  const [activeDepthPreset, setActiveDepthPreset] = useState<DepthPresetSelection>("portrait-v81");
+  const [activeDepthPreset, setActiveDepthPreset] = useState<DepthPresetSelection>("ritratto");
 
-  const [pp, setPp] = useState<PP>(DEPTH_PRESETS["portrait-v81"].values);
+  const [pp, setPp] = useState<PP>({ ...DEPTH_PRESETS.ritratto.values });
   const setP = (k: keyof PP, v: number | boolean) => {
     setActiveDepthPreset("custom");
     setPp((s) => ({ ...s, [k]: v }));
   };
   const applyDepthPreset = (id: DepthPresetId) => {
+    const preset = DEPTH_PRESETS[id];
     setActiveDepthPreset(id);
-    setPp({ ...DEPTH_PRESETS[id].values });
-    setDepthMm(id === "portrait-v81" || id === "natural-v81" ? 5 : 5.5);
-    setStatus(`Preset ${DEPTH_PRESETS[id].label} applicato.`);
+    setPp({ ...preset.values });
+    // Il preset copre anche il pannello Rilievo: e' la combinazione dei due a fare la resa.
+    setDepthMm(preset.relief.depthMm);
+    setBaseMm(preset.relief.baseMm);
+    setWidthMm(preset.relief.widthMm);
+    setDecimate(preset.relief.decimate);
+    setMeshProfile(preset.relief.meshProfile);
+    setAdaptiveMesh(preset.relief.adaptiveMesh);
+    setStatus(`Preset ${preset.label} applicato (profondità e rilievo).`);
   };
 
-  const [depthMm, setDepthMm] = useState(5);
-  const [baseMm, setBaseMm] = useState(2);
-  const [widthMm, setWidthMm] = useState(100);
-  const [decimate, setDecimate] = useState(1);
-  const [meshProfile, setMeshProfile] = useState<MeshProfile>("fine");
+  // Stato iniziale = preset "Ritratto": all'avvio l'app parte gia' dai valori validati,
+  // non da default arbitrari diversi da qualunque preset.
+  const [depthMm, setDepthMm] = useState(DEPTH_PRESETS.ritratto.relief.depthMm);
+  const [baseMm, setBaseMm] = useState(DEPTH_PRESETS.ritratto.relief.baseMm);
+  const [widthMm, setWidthMm] = useState(DEPTH_PRESETS.ritratto.relief.widthMm);
+  const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
+  const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
   // Cornice / passepartout / vetro (geometria riusata dal generatore classico)
   const [frameOn, setFrameOn] = useState(false);
@@ -408,7 +475,7 @@ export default function Studio() {
   const saveProject = useCallback(() => {
     if (!imgDataUrl) { setStatus("Apri prima un'immagine."); return; }
     const proj = {
-      app: "ReliefForge", appVersion: "8.4.0", fileVersion: 2, savedAt: new Date().toISOString(),
+      app: "ReliefForge", appVersion: __APP_VERSION__, fileVersion: 2, savedAt: new Date().toISOString(),
       image: imgDataUrl, quality, pp, depthPreset: activeDepthPreset,
       relief: { depthMm, baseMm, widthMm, decimate, meshProfile },
       appearance: visualPreferences,
@@ -437,7 +504,7 @@ export default function Studio() {
         const p = JSON.parse(reader.result as string);
         if (p.quality) setQuality(p.quality);
         if (p.depthPreset && p.depthPreset in DEPTH_PRESETS) setActiveDepthPreset(p.depthPreset);
-        if (p.pp) setPp({ ...DEPTH_PRESETS["natural-v81"].values, ...p.pp });
+        if (p.pp) setPp({ ...DEPTH_PRESETS.ritratto.values, ...p.pp });
         if (p.appearance) setVisualPreferences({ ...DEFAULT_VISUAL_PREFERENCES, ...p.appearance });
         if (p.relief) {
           setDepthMm(p.relief.depthMm ?? 5);
@@ -485,23 +552,40 @@ export default function Studio() {
     };
   }, [hmState, meshProfile, decimate]);
 
+  // Istogramma + livelli automatici. Dipende solo da denoise e segmentazione:
+  // trascinare i punti NON lo ricalcola, cosi' la distribuzione resta ferma sotto
+  // le maniglie mentre le muovi.
+  const levelsStats = useMemo(() => {
+    const raw = rawRef.current;
+    if (!raw) return null;
+    return depthLevelsStats(raw, pp);
+  }, [imgDataUrl, quality, pp.skinDenoise, pp.segment, pp.segThreshold, pp.segFeather]);
+
   const prepareExportHeightmap = useCallback(() => {
     if (!hmState) return null;
     const profile = MESH_PROFILES[meshProfile];
     const factor = Math.max(1, Math.floor(decimate || 1));
+    // Con il mesher adattivo la heightmap va passata a piena risoluzione: la densita'
+    // dei triangoli la decide la tolleranza geometrica, non un pre-ricampionamento.
+    if (adaptiveMesh && factor === 1) return hmState;
     return resampleHeightmapFiltered(hmState, Math.max(4, Math.floor(profile.exportCells / (factor * factor))));
-  }, [hmState, meshProfile, decimate]);
+  }, [hmState, meshProfile, decimate, adaptiveMesh]);
+
+  /** Tolleranza geometrica da passare all'export (0 = griglia uniforme). */
+  const exportToleranceMm = adaptiveMesh ? MESH_PROFILES[meshProfile].toleranceMm : 0;
 
   const exportStl = useCallback(() => {
     if (!hmState) { setStatus("Genera prima il rilievo."); return; }
     try {
       const hm = prepareExportHeightmap();
       if (!hm) return;
-      downloadReliefStlBinary({
-        hm, widthMm, depthMm, baseMm,
+      const { triangles } = downloadReliefStlBinary({
+        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm,
         outputMode: "relief" as any, baseStyle: "flat" as any, fileName: "reliefforge",
       });
-      setStatus(`STL esportato: ${hm.w}×${hm.h}, circa ${formatTriangleCount(estimateCompactSolidTriangles(hm.w, hm.h))} triangoli.`);
+      // Conteggio REALE: con la mesh adattiva la stima sulla griglia sbagliava di
+      // un ordine di grandezza (dichiarava 1,4 M su un file da ~40k).
+      setStatus(`STL esportato: ${hm.w}×${hm.h}, ${formatTriangleCount(triangles)} triangoli (${((84 + triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export STL: " + (e?.message ?? String(e))); }
   }, [hmState, widthMm, depthMm, baseMm, prepareExportHeightmap]);
 
@@ -512,15 +596,16 @@ export default function Studio() {
     try {
       const hm = prepareExportHeightmap();
       if (!hm) return;
-      await downloadReliefAssemblyStl({
+      const res = await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
+        toleranceMm: exportToleranceMm,
         fileName: "reliefforge-cornice", reliefZmm: reliefZ, matZmm: matZ,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
         frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameP.cornerRadiusMm, reliefGapMm: frameP.reliefGapMm } : null,
       } as any);
-      setStatus("STL cornice+rilievo (fuso) esportato.");
+      setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
   }, [hmState, frameOn, matOn, glassOn, frameP, matP, glassP, widthMm, depthMm, baseMm, prepareExportHeightmap, reliefZ, matZ, rimOn, rimW, rimD]);
 
@@ -533,6 +618,7 @@ export default function Studio() {
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
+        toleranceMm: exportToleranceMm,
         fileName: "reliefforge-cornice-sola", reliefZmm: reliefZ, matZmm: matZ, frameOnly: true,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -643,7 +729,7 @@ export default function Studio() {
       <div style={{ height: 36, background: C.bar, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 5, background: C.accent }} /> ReliefForge 8.4
+            <span style={{ width: 10, height: 10, borderRadius: 5, background: C.accent }} /> ReliefForge {__APP_VERSION__}
           </span>
           <div style={{ position: "relative", fontSize: 13 }}>
             <button onClick={() => { setPreferencesMenu(false); setFileMenu((v) => !v); }} style={menuBtn}>File ▾</button>
@@ -742,6 +828,32 @@ export default function Studio() {
               <BoxIcon size={14} /> {wire ? "Solido" : "Wireframe"}
             </button>
           )}
+          {hmState && (
+            <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 10, background: "#0e1116cc", border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px" }}>
+              <button
+                onClick={() => setRenderStyle((v) => (v === "matcap" ? "gesso" : v === "gesso" ? "studio" : "matcap"))}
+                title="Matcap: luce solidale alla camera, resta ferma mentre ruoti — la migliore per valutare la tridimensionalità. Gesso: opaco con luce radente fissa nello spazio. Studio: resa lucida per presentare il pezzo."
+                style={{ background: "none", border: "none", color: C.text, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0, minWidth: 52, textAlign: "left" }}>
+                <Sun size={13} style={{ verticalAlign: "-2px", marginRight: 5 }} />
+                {renderStyle === "matcap" ? "Matcap" : renderStyle === "gesso" ? "Gesso" : "Studio"}
+              </button>
+              <input
+                type="range" min={0} max={180} step={1} value={keyLightDeg}
+                onChange={(e) => setKeyLightDeg(Number(e.target.value))}
+                title={renderStyle === "matcap" ? "Direzione del riflesso (resta solidale alla camera)" : "Direzione della luce radente"}
+                style={{ width: 96, accentColor: C.accent, cursor: "pointer" }}
+              />
+              <span style={{ color: C.hint, fontSize: 11, fontVariantNumeric: "tabular-nums", width: 30 }}>{keyLightDeg}°</span>
+            </div>
+          )}
+          {hmState && (frameOn || matOn) && (
+            <button
+              onClick={() => setPreviewWelded((v) => !v)}
+              title="Fuso = quello che produce «Cornice + rilievo (fuso)»: un corpo unico, la cornice morde 1 mm nel rilievo per saldarsi. Separati = quello che produce «Solo cornice»: pezzi distinti, con il gioco impostato attorno al rilievo."
+              style={{ position: "absolute", top: 12, left: 132, zIndex: 10, display: "flex", alignItems: "center", gap: 6, background: "#0e1116cc", color: C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <FrameIcon size={14} /> {previewWelded ? "Anteprima: fuso" : "Anteprima: separati"}
+            </button>
+          )}
           {hmState ? (
             <ReliefPreview3D hmState={hmState} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
@@ -754,6 +866,11 @@ export default function Studio() {
               frame={previewFrame}
               mat={previewMat}
               glassSlot={previewGlassSlot}
+              welded={previewWelded}
+              onLayout={setLayout}
+              toleranceMm={exportToleranceMm}
+              renderStyle={renderStyle}
+              keyLightDeg={keyLightDeg}
               ledValance={previewLedValance} />
           ) : (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.hint, gap: 14 }}>
@@ -854,10 +971,18 @@ export default function Studio() {
                     }}>{id === "balanced" ? "Bilanciato" : id === "fine" ? "Fine" : "Massima"}</button>
                   ))}
                 </div>
+                <Toggle label="Mesh adattiva (STL leggero)" on={adaptiveMesh} onChange={setAdaptiveMesh} />
+                <div style={{ fontSize: 10, color: C.hint, margin: "-2px 0 8px", lineHeight: 1.45 }}>
+                  Mette i triangoli dove c'è dettaglio invece di spalmarli sullo sfondo piatto.
+                  Tolleranza {MESH_PROFILES[meshProfile].toleranceMm.toLocaleString("it-IT")} mm — su un ritratto tipico
+                  l'STL passa da decine di MB a pochi MB, con la stessa resa in stampa.
+                </div>
                 {meshPlan && (
                   <div style={{ padding: 8, borderRadius: 6, background: C.barDark, border: `1px solid ${C.border}`, color: C.hint, fontSize: 10, lineHeight: 1.5 }}>
                     Preview {meshPlan.preview.w}×{meshPlan.preview.h} · ~{formatTriangleCount(meshPlan.previewTriangles)} triangoli<br />
-                    STL {meshPlan.exported.w}×{meshPlan.exported.h} · ~{formatTriangleCount(meshPlan.exportTriangles)} triangoli
+                    {adaptiveMesh
+                      ? <>STL adattivo · tolleranza {MESH_PROFILES[meshProfile].toleranceMm.toLocaleString("it-IT")} mm (conteggio reale a fine export)</>
+                      : <>STL {meshPlan.exported.w}×{meshPlan.exported.h} · ~{formatTriangleCount(meshPlan.exportTriangles)} triangoli</>}
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: C.hint, marginTop: 6 }}>L'export STL è nello step <b style={{ color: C.muted }}>Esporta</b>.</div>
@@ -867,6 +992,27 @@ export default function Studio() {
             {step === "frame" && (
               <>
                 <PanelTitle Icon={FrameIcon} text="Cornice & passepartout" />
+
+                {layout && (frameOn || matOn) && (
+                  <div style={{ background: "#0e1116", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 11, lineHeight: 1.7 }}>
+                    <div style={{ color: C.muted, fontWeight: 700, marginBottom: 3 }}>Quote risultanti</div>
+                    <QuoteRow label="Ingombro esterno" value={`${layout.outerW.toFixed(1)} × ${layout.outerH.toFixed(1)} × ${layout.outerDepthMm.toFixed(1)} mm`} />
+                    {frameOn && <QuoteRow label="Apertura visibile" value={`${layout.visibleApertureW.toFixed(1)} × ${layout.visibleApertureH.toFixed(1)} mm`} />}
+                    {frameOn && (
+                      <QuoteRow
+                        label="Cornice copre il rilievo"
+                        value={`${layout.reliefCoverPerSideMm.toFixed(1)} mm per lato`}
+                        warn={layout.reliefCoverPerSideMm > 5}
+                      />
+                    )}
+                    {matOn && layout.matInnerW !== null && (
+                      <QuoteRow label="Apertura passepartout" value={`${layout.matInnerW.toFixed(1)} × ${(layout.matInnerH ?? 0).toFixed(1)} mm`} />
+                    )}
+                    {layout.warnings.map((w, i) => (
+                      <div key={i} style={{ color: "#ffb454", marginTop: 5, lineHeight: 1.45 }}>⚠ {w}</div>
+                    ))}
+                  </div>
+                )}
 
                 <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>Posizione in profondità</div>
                 <Slider label="Profondità rilievo" value={reliefZ} min={-40} max={40} step={0.5} suffix=" mm" onChange={setReliefZ} />
@@ -939,9 +1085,19 @@ export default function Studio() {
                 <button onClick={exportFrameOnly} disabled={!hmState || (!frameOn && !matOn)} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && (frameOn || matOn) ? 1 : 0.5 }}>
                   <Download size={15} /> Solo cornice (STL separato)
                 </button>
-                <button onClick={exportReliefMat} disabled={!hmState || !matOn} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && matOn ? 1 : 0.5 }}>
+                <button
+                  onClick={exportReliefMat}
+                  disabled={!hmState || !matOn}
+                  title={matOn ? "Esporta rilievo e passepartout saldati, senza la cornice." : "Serve il passepartout attivo: senza, questo export coinciderebbe con l'STL del solo rilievo (step Esporta)."}
+                  style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && matOn ? 1 : 0.5 }}>
                   <Download size={15} /> Rilievo + passepartout (senza cornice)
                 </button>
+                {hmState && !matOn && (
+                  <div style={{ fontSize: 10, color: C.hint, marginTop: 5, lineHeight: 1.45 }}>
+                    Disattivato perché il <b style={{ color: C.muted }}>passepartout è spento</b>. Senza passepartout
+                    questo file sarebbe identico all'STL del solo rilievo, che trovi nello step <b style={{ color: C.muted }}>Esporta</b>.
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: C.hint, marginTop: 8, lineHeight: 1.5 }}>
                   La <b style={{ color: C.muted }}>battuta a L</b> crea un appoggio continuo sui quattro lati. Lo <b style={{ color: C.muted }}>scasso a U</b> resta disponibile come alternativa aperta in alto.
                 </div>
@@ -979,6 +1135,45 @@ export default function Studio() {
                 <span style={{ fontSize: 11, color: C.hint }}>—</span>
               )}
             </div>
+
+            {levelsStats && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, fontSize: 11, color: C.muted }}>
+                  <span>Livelli</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", color: pp.levelsAuto ? C.muted : C.text }}>
+                    <input
+                      type="checkbox"
+                      checked={pp.levelsAuto}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setActiveDepthPreset("custom");
+                        // Passando a manuale si parte dai valori automatici correnti:
+                        // il rilievo non salta, e da li' si aggiusta.
+                        setPp((st) => ({ ...st, levelsAuto: on, levelsBlack: levelsStats.lo, levelsWhite: levelsStats.hi }));
+                      }}
+                    />
+                    Auto
+                  </label>
+                </div>
+                <DepthLevels
+                  histogram={levelsStats.histogram}
+                  black={pp.levelsAuto ? levelsStats.lo : pp.levelsBlack}
+                  white={pp.levelsAuto ? levelsStats.hi : pp.levelsWhite}
+                  threshold={pp.segment ? pp.segThreshold : null}
+                  auto={pp.levelsAuto}
+                  accent={C.accent}
+                  onChange={(b, wt) => {
+                    setActiveDepthPreset("custom");
+                    setPp((st) => ({ ...st, levelsBlack: b, levelsWhite: wt }));
+                  }}
+                />
+                <div style={{ fontSize: 10, color: C.hint, marginTop: 5, lineHeight: 1.45 }}>
+                  {pp.levelsAuto
+                    ? "Automatico: il soggetto viene steso su tutta l'altezza. Togli la spunta per scegliere a mano quale profondità diventa il fondo e quale la cima."
+                    : "Trascina i due punti sull'istogramma. In tratteggio azzurro la soglia di segmentazione."}
+                </div>
+              </>
+            )}
           </div>
 
           {commercialMessage.enabled && (
@@ -1161,6 +1356,16 @@ function PanelTitle({ Icon, text }: { Icon: any; text: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 13, fontWeight: 600, fontSize: 13 }}>
       <Icon size={16} color="var(--rf-accent)" /> {text}
+    </div>
+  );
+}
+
+/** Riga di sola lettura per le quote derivate dell'assieme (V8.5). */
+function QuoteRow({ label, value, warn = false }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+      <span style={{ color: "var(--rf-hint, #7b8494)" }}>{label}</span>
+      <span style={{ color: warn ? "#ffb454" : "var(--rf-text, #e6e9ef)", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{value}</span>
     </div>
   );
 }

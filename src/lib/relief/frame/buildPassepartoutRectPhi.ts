@@ -224,18 +224,23 @@ function computePhiBands(totalBandsWanted: number, steps: number, phi: number, m
   return bands;
 }
 
+/** Bande φ effettive (mm), dalla più interna alla più esterna, dopo clamp φ/minBand.
+ *  UNICA implementazione: la usano sia la mesh di anteprima sia il builder manifold
+ *  dell'export, così i due passepartout non possono divergere. */
+export function passepartoutBandsMm(p: {
+  steps: 1 | 2 | 3 | 4 | 5 | 6; totalBandsMm: number; minBandMm: number; phiRatio?: number;
+}): number[] {
+  const steps = Number(p.steps ?? 1);
+  const minBand = clamp(Number(p.minBandMm ?? 6), 1, 50);
+  const phi = Number.isFinite(p.phiRatio) ? Number(p.phiRatio) : PHI_DEFAULT;
+  const totalBandsWanted = clamp(Number(p.totalBandsMm ?? 30), minBand * steps, 1000);
+  return computePhiBands(totalBandsWanted, steps, phi, minBand);
+}
+
 /** Larghezza TOTALE reale del passepartout per lato (mm), tenendo conto del clamp φ/minBand.
  *  Serve per far combaciare il bordo interno della cornice con il bordo esterno del passepartout. */
 export function passepartoutOuterBandsMm(p: {
   steps: 1 | 2 | 3 | 4 | 5 | 6; totalBandsMm: number; minBandMm: number; phiRatio?: number;
 }): number {
-  const steps = Number(p.steps ?? 1);
-  const minBand = clamp(Number(p.minBandMm ?? 6), 1, 50);
-  const phi = Number.isFinite(p.phiRatio) ? Number(p.phiRatio) : PHI_DEFAULT;
-  const totalBandsWanted = clamp(Number(p.totalBandsMm ?? 30), minBand * steps, 1000);
-  let sumW = 0;
-  for (let i = 0; i < steps; i++) sumW += Math.pow(phi, i);
-  let base = totalBandsWanted / sumW;
-  if (base < minBand) base = minBand;
-  return base * sumW;
+  return passepartoutBandsMm(p).reduce((s, x) => s + x, 0);
 }
