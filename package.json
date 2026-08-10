@@ -1,7 +1,7 @@
 {
   "name": "reliefforge",
   "private": true,
-  "version": "8.7.1",
+  "version": "8.8.0",
   "description": "ReliefForge — da foto a bassorilievo stampabile",
   "author": "Federico Cordioli",
   "packageManager": "pnpm@11.7.0",
@@ -9,6 +9,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "assembly:check": "node scripts/run-assembly-check.mjs scripts/assembly-check.mts",
+    "curve:check": "node scripts/run-assembly-check.mjs scripts/curve-check.mts",
     "adaptive:check": "node scripts/run-assembly-check.mjs scripts/adaptive-check.mts",
     "dev": "vite",
     "build": "vite build",

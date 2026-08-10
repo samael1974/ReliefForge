@@ -1,9 +1,9 @@
-RELIEFFORGE V8.7 - ISTRUZIONI
+RELIEFFORGE V8.8 - ISTRUZIONI
 =============================
 
 PER L'UTENTE FINALE
 -------------------
-1. Scarica ReliefForge-Setup-8.7.1.exe (dalla pagina Releases su GitHub).
+1. Scarica ReliefForge-Setup-8.8.0.exe (dalla pagina Releases su GitHub).
 2. Doppio clic sul file e segui la procedura guidata.
 3. Avvia ReliefForge dall'icona sul Desktop o dal menu Start.
 
@@ -13,7 +13,7 @@ Nota: alla prima esecuzione Windows SmartScreen puo' mostrare un avviso
 perche' l'installer non e' firmato digitalmente. Clicca su
 "Ulteriori informazioni" e poi "Esegui comunque".
 
-NOVITA' DELLA V8.7
+NOVITA' DELLA V8.8
 ------------------
 CORNICE E PASSEPARTOUT
 - Il passepartout esportato ora e' un vero anello a gradoni CON apertura.
@@ -33,7 +33,16 @@ CORNICE E PASSEPARTOUT
   vera copre qualche mm di quadro. Nella 8.4 semplicemente non te lo diceva
   nessuno. Se e' troppo, riduci "Larghezza battuta".
 
-LIVELLI SULLA DEPTH MAP
+CURVA SULLA DEPTH MAP
+- Sotto l'anteprima della depth map c'e' la CURVA con l'istogramma sullo sfondo.
+  Clic = aggiungi un punto, trascina = muovi, doppio clic = togli.
+- Serve quando l'istogramma ha due gobbe (sfondo e soggetto): si schiaccia quella
+  dello sfondo e si allarga quella del soggetto, dedicando quasi tutta l'altezza
+  al viso. Con i soli livelli si poteva solo tagliare agli estremi.
+- La curva resta sempre crescente: non puo' invertire il rilievo.
+- "Auto" e "Ripristina" riportano ai livelli automatici.
+
+LIVELLI (sostituiti dalla curva)
 - Sotto l'anteprima della depth map c'e' l'istogramma della profondita' con due
   punti trascinabili: il FONDO (quale profondita' diventa il piano) e la CIMA
   (quale diventa il punto piu' alto). La soglia di segmentazione e' disegnata
@@ -68,7 +77,7 @@ PER LO SVILUPPATORE: CREARE L'INSTALLER
 Doppio clic su CREA_SETUP_EXE.bat. Lo script:
   1. installa le dipendenze (pnpm install)
   2. compila il frontend (vite build --base=./)
-  3. crea release\ReliefForge-Setup-8.7.1.exe (electron-builder, NSIS)
+  3. crea release\ReliefForge-Setup-8.8.0.exe (electron-builder, NSIS)
 Log completo in crea_setup_log.txt. Non chiudere la finestra nera
 finche' non compare FATTO!
 

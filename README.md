@@ -1,4 +1,4 @@
-# ReliefForge V8.7
+# ReliefForge V8.8
 
 ReliefForge trasforma immagini e depth map in bassorilievi 3D esportabili in STL, con cornice parametrica e profili ottimizzati per stampa 3D e CNC. App desktop per Windows basata su Electron.
 
@@ -7,13 +7,13 @@ ReliefForge trasforma immagini e depth map in bassorilievi 3D esportabili in STL
 **Windows**
 
 1. Vai alla pagina **Releases** di questo repository.
-2. Scarica `ReliefForge-Setup-8.7.1.exe`.
+2. Scarica `ReliefForge-Setup-8.8.0.exe`.
 3. Doppio clic e segui la procedura guidata (lingua e cartella a scelta).
 4. Avvia ReliefForge dall'icona sul Desktop o dal menu Start.
 
 **macOS**
 
-1. Dalla pagina **Releases** scarica il `.dmg` per il tuo Mac: `ReliefForge-8.7.1-mac-arm64.dmg` (chip Apple M1/M2/M3/M4) oppure `ReliefForge-8.7.1-mac-x64.dmg` (Mac Intel).
+1. Dalla pagina **Releases** scarica il `.dmg` per il tuo Mac: `ReliefForge-8.8.0-mac-arm64.dmg` (chip Apple M1/M2/M3/M4) oppure `ReliefForge-8.8.0-mac-x64.dmg` (Mac Intel).
 2. Apri il `.dmg` e trascina ReliefForge in Applicazioni.
 3. Primo avvio: clic **destro** sull'app → Apri → Apri (l'app non è firmata Apple; dettagli in `ISTRUZIONI_MAC.txt`).
 
@@ -40,7 +40,7 @@ pnpm electron:dev     # app desktop con dev server e DevTools
 ## Creare l'installer
 
 Doppio clic su `CREA_SETUP_EXE.bat` (oppure `pnpm electron:build`).
-L'installer viene creato in `release\ReliefForge-Setup-8.7.1.exe`.
+L'installer viene creato in `release\ReliefForge-Setup-8.8.0.exe`.
 
 ## Requisiti consigliati
 

@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import ReliefPreview3D, { type HeightmapState } from "@/components/relief/ReliefPreview3D";
 import type { AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
-import DepthLevels from "@/components/relief/DepthLevels";
+import DepthCurve from "@/components/relief/DepthCurve";
+import { IDENTITY_CURVE, applyCurve, buildCurveLut, levelsCurve, type CurvePoint } from "@/lib/relief/transform/toneCurve";
 import { downloadReliefStlBinary, downloadReliefAssemblyStl } from "@/components/relief/reliefStl";
 import { estimateDepth } from "@/lib/relief/depth/estimateDepth";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
@@ -37,8 +38,9 @@ type PP = {
   detailMicro: number; detailSigma: number; skinDenoise: number; volumeGamma: number;
   localAmount: number; localSigma: number; contrastPct: number; invert: boolean;
   segment: boolean; segThreshold: number; segFeather: number;
-  /** V8.6 — livelli sulla depth map. auto = come prima (min/max del soggetto). */
-  levelsAuto: boolean; levelsBlack: number; levelsWhite: number;
+  /** V8.8 — curva tonale sulla depth map. auto = livelli automatici come prima.
+   *  I livelli sono il caso della curva con i soli estremi: nessuna perdita. */
+  levelsAuto: boolean; curve: CurvePoint[];
 };
 type CommercialMessage = {
   enabled: boolean;
@@ -102,7 +104,7 @@ const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values
       detailMicro: 0.15, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
       localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
       segment: true, segThreshold: 0.1, segFeather: 0,
-      levelsAuto: true, levelsBlack: 0, levelsWhite: 1,
+      levelsAuto: true, curve: IDENTITY_CURVE,
     },
     relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: true },
   },
@@ -200,17 +202,14 @@ function processHeightmap(raw: Raw, p: PP): Float32Array {
   // con min/max automatici e non c'era modo di intervenire. Ora quel calcolo e' il
   // caso "auto" di un controllo esplicito: trascinando i punti sull'istogramma si
   // sceglie quale profondita' diventa il fondo e quale la cima.
+  // In automatico si applica la stessa curva a due punti dei livelli automatici,
+  // cioe' esattamente il comportamento delle versioni precedenti.
   const auto = autoLevels(d, mask, p);
-  const lo = p.levelsAuto ? auto.lo : Math.min(p.levelsBlack, p.levelsWhite - 1e-3);
-  const hi = p.levelsAuto ? auto.hi : Math.max(p.levelsWhite, p.levelsBlack + 1e-3);
-  if (mask || lo !== 0 || hi !== 1) {
-    const span = Math.max(1e-6, hi - lo);
-    const o = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      let v = (d[i] - lo) / span; v = v < 0 ? 0 : v > 1 ? 1 : v;
-      o[i] = mask ? v * mask[i] : v;
-    }
-    d = o;
+  const curve = p.levelsAuto ? levelsCurve(auto.lo, auto.hi) : p.curve;
+  const isIdentity = curve.length === 2 && curve[0].x === 0 && curve[0].y === 0 && curve[1].x === 1 && curve[1].y === 1;
+  if (mask || !isIdentity) {
+    d = applyCurve(d, buildCurveLut(curve));
+    if (mask) for (let i = 0; i < n; i++) d[i] *= mask[i];
   }
 
   if (p.localAmount > 0) {
@@ -1139,38 +1138,44 @@ export default function Studio() {
             {levelsStats && (
               <>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, fontSize: 11, color: C.muted }}>
-                  <span>Livelli</span>
-                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", color: pp.levelsAuto ? C.muted : C.text }}>
-                    <input
-                      type="checkbox"
-                      checked={pp.levelsAuto}
-                      onChange={(e) => {
-                        const on = e.target.checked;
-                        setActiveDepthPreset("custom");
-                        // Passando a manuale si parte dai valori automatici correnti:
-                        // il rilievo non salta, e da li' si aggiusta.
-                        setPp((st) => ({ ...st, levelsAuto: on, levelsBlack: levelsStats.lo, levelsWhite: levelsStats.hi }));
-                      }}
-                    />
-                    Auto
-                  </label>
+                  <span>Curva profondità</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={() => { setActiveDepthPreset("custom"); setPp((st) => ({ ...st, levelsAuto: false, curve: levelsCurve(levelsStats.lo, levelsStats.hi) })); }}
+                      title="Riporta la curva ai livelli automatici (fondo e cima rilevati dal soggetto)."
+                      style={{ background: "none", border: "none", color: C.hint, fontSize: 10, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                      Ripristina
+                    </button>
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", color: pp.levelsAuto ? C.muted : C.text }}>
+                      <input
+                        type="checkbox"
+                        checked={pp.levelsAuto}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setActiveDepthPreset("custom");
+                          // Passando a manuale si parte dalla curva automatica corrente:
+                          // il rilievo non salta, e da li' si aggiusta.
+                          setPp((st) => ({ ...st, levelsAuto: on, curve: on ? st.curve : levelsCurve(levelsStats.lo, levelsStats.hi) }));
+                        }}
+                      />
+                      Auto
+                    </label>
+                  </div>
                 </div>
-                <DepthLevels
+                <DepthCurve
                   histogram={levelsStats.histogram}
-                  black={pp.levelsAuto ? levelsStats.lo : pp.levelsBlack}
-                  white={pp.levelsAuto ? levelsStats.hi : pp.levelsWhite}
+                  points={pp.levelsAuto ? levelsCurve(levelsStats.lo, levelsStats.hi) : pp.curve}
                   threshold={pp.segment ? pp.segThreshold : null}
-                  auto={pp.levelsAuto}
                   accent={C.accent}
-                  onChange={(b, wt) => {
+                  onChange={(pts) => {
                     setActiveDepthPreset("custom");
-                    setPp((st) => ({ ...st, levelsBlack: b, levelsWhite: wt }));
+                    setPp((st) => ({ ...st, levelsAuto: false, curve: pts }));
                   }}
                 />
                 <div style={{ fontSize: 10, color: C.hint, marginTop: 5, lineHeight: 1.45 }}>
                   {pp.levelsAuto
-                    ? "Automatico: il soggetto viene steso su tutta l'altezza. Togli la spunta per scegliere a mano quale profondità diventa il fondo e quale la cima."
-                    : "Trascina i due punti sull'istogramma. In tratteggio azzurro la soglia di segmentazione."}
+                    ? "Automatico: il soggetto viene steso su tutta l'altezza. Togli la spunta, o trascina un punto, per governare la curva a mano."
+                    : "Clic = aggiungi punto · trascina = muovi · doppio clic = togli. La curva resta sempre crescente: non può invertire il rilievo. In tratteggio azzurro la soglia di segmentazione."}
                 </div>
               </>
             )}
