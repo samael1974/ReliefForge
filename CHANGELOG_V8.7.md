@@ -1,10 +1,34 @@
-# Changelog V8.6
+# Changelog V8.7
 
 Prima release distribuita dopo la 8.4. Durante lo sviluppo sono stati costruiti piu'
 installer marcati 8.5.0, tutti diversi fra loro: da qui in avanti **ogni installer
 consegnato ha un numero di versione nuovo**, cosi' non e' mai ambiguo quale build si
 sta usando. Il numero si cambia in un solo posto (`package.json`) e lo leggono
 intestazione, salvataggio progetto e installer.
+
+## Livelli sulla depth map (V8.7)
+
+La depth map **è** il campo di altezze: decidere quale profondità diventa il piano di
+fondo e quale il punto più alto è la scelta che determina la resa. Fino alla 8.6 quel
+valore si sceglieva a occhio digitando un numero in "Soglia sfondo", senza vedere la
+distribuzione — e ogni tentativo costava una rigenerazione.
+
+Sotto l'anteprima della depth map ora c'è l'**istogramma** con due punti trascinabili
+(fondo e cima) e la **soglia di segmentazione disegnata sopra**, in tratteggio azzurro,
+nello stesso dominio: si vede a colpo d'occhio cosa si sta tagliando.
+
+L'istogramma usa una scala a radice quadrata: senza, il picco dello sfondo piatto
+(decine di migliaia di pixel sullo stesso valore) schiaccerebbe tutto il resto a una
+riga invisibile.
+
+**Compatibilità.** La spunta "Auto" è attiva di default e riproduce *esattamente* il
+comportamento precedente: la 8.6 stendeva già il soggetto su 0..1 usando min/max
+automatici, e quel calcolo è diventato il caso "auto" del nuovo controllo. Togliendo
+la spunta si parte dai valori automatici correnti, quindi il rilievo non salta.
+Senza segmentazione e in auto non viene applicato alcun rimappaggio, come prima.
+
+Niente curve libere: su un'altezza fisica una curva arbitraria produce facilmente
+gradini visibili in stampa, mentre i livelli restano prevedibili.
 
 ## Cornice e passepartout
 

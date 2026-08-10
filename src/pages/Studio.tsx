@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import ReliefPreview3D, { type HeightmapState } from "@/components/relief/ReliefPreview3D";
 import type { AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
+import DepthLevels from "@/components/relief/DepthLevels";
 import { downloadReliefStlBinary, downloadReliefAssemblyStl } from "@/components/relief/reliefStl";
 import { estimateDepth } from "@/lib/relief/depth/estimateDepth";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
@@ -36,6 +37,8 @@ type PP = {
   detailMicro: number; detailSigma: number; skinDenoise: number; volumeGamma: number;
   localAmount: number; localSigma: number; contrastPct: number; invert: boolean;
   segment: boolean; segThreshold: number; segFeather: number;
+  /** V8.6 — livelli sulla depth map. auto = come prima (min/max del soggetto). */
+  levelsAuto: boolean; levelsBlack: number; levelsWhite: number;
 };
 type CommercialMessage = {
   enabled: boolean;
@@ -99,6 +102,7 @@ const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values
       detailMicro: 0.15, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
       localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
       segment: true, segThreshold: 0.1, segFeather: 0,
+      levelsAuto: true, levelsBlack: 0, levelsWhite: 1,
     },
     relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: true },
   },
@@ -150,26 +154,61 @@ function dl(blob: Blob, name: string) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
 }
 
+/** Maschera del soggetto dal solo depth. null quando la segmentazione e' spenta. */
+function buildSegmentMask(d: Float32Array, w: number, h: number, p: PP): Float32Array | null {
+  if (!p.segment) return null;
+  const n = w * h;
+  let mask = new Float32Array(n);
+  for (let i = 0; i < n; i++) mask[i] = d[i] > p.segThreshold ? 1 : 0;
+  if (p.segFeather > 0) mask = gaussianBlurF32(mask, w, h, p.segFeather);
+  return mask;
+}
+
+/** Livelli automatici: min/max del soggetto (o nessun rimappaggio senza segmentazione).
+ *  E' esattamente cio' che faceva la 8.5, qui reso esplicito e mostrabile in UI. */
+function autoLevels(d: Float32Array, mask: Float32Array | null, p: PP): { lo: number; hi: number } {
+  if (!p.segment || !mask) return { lo: 0, hi: 1 };
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < d.length; i++) if (mask[i] > 0.5) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!isFinite(lo) || !isFinite(hi) || hi - lo < 1e-6) return { lo: 0, hi: 1 };
+  return { lo, hi };
+}
+
+/** Depth denoised + istogramma + livelli automatici, per il pannello dei livelli. */
+export function depthLevelsStats(raw: Raw, p: PP, bins = 128) {
+  const { w, h } = raw;
+  const d = p.skinDenoise > 0 ? gaussianBlurF32(raw.depth, w, h, p.skinDenoise) : raw.depth;
+  const histogram = new Uint32Array(bins);
+  for (let i = 0; i < d.length; i++) {
+    const b = Math.min(bins - 1, Math.max(0, (d[i] * bins) | 0));
+    histogram[b]++;
+  }
+  const mask = buildSegmentMask(d, w, h, p);
+  return { histogram, ...autoLevels(d, mask, p) };
+}
+
 function processHeightmap(raw: Raw, p: PP): Float32Array {
   const { w, h } = raw;
   const n = w * h;
   let d = p.skinDenoise > 0 ? gaussianBlurF32(raw.depth, w, h, p.skinDenoise) : raw.depth.slice();
 
   // Segmentazione dal solo depth: lo sfondo (lontano = valori bassi) sotto soglia
-  // viene appiattito a 0 e il soggetto viene ri-steso su tutto 0..1 -> bombatura piena.
-  let mask: Float32Array | null = null;
-  if (p.segment) {
-    mask = new Float32Array(n);
-    for (let i = 0; i < n; i++) mask[i] = d[i] > p.segThreshold ? 1 : 0;
-    if (p.segFeather > 0) mask = gaussianBlurF32(mask, w, h, p.segFeather);
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < n; i++) if (mask[i] > 0.5) { const v = d[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
-    if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+  // viene appiattito a 0.
+  const mask = buildSegmentMask(d, w, h, p);
+
+  // V8.6 — LIVELLI. Fino alla 8.5 la segmentazione ri-stendeva il soggetto su 0..1
+  // con min/max automatici e non c'era modo di intervenire. Ora quel calcolo e' il
+  // caso "auto" di un controllo esplicito: trascinando i punti sull'istogramma si
+  // sceglie quale profondita' diventa il fondo e quale la cima.
+  const auto = autoLevels(d, mask, p);
+  const lo = p.levelsAuto ? auto.lo : Math.min(p.levelsBlack, p.levelsWhite - 1e-3);
+  const hi = p.levelsAuto ? auto.hi : Math.max(p.levelsWhite, p.levelsBlack + 1e-3);
+  if (mask || lo !== 0 || hi !== 1) {
     const span = Math.max(1e-6, hi - lo);
     const o = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      let s = (d[i] - lo) / span; s = s < 0 ? 0 : s > 1 ? 1 : s;
-      o[i] = s * mask[i];
+      let v = (d[i] - lo) / span; v = v < 0 ? 0 : v > 1 ? 1 : v;
+      o[i] = mask ? v * mask[i] : v;
     }
     d = o;
   }
@@ -512,6 +551,15 @@ export default function Studio() {
       exportTriangles: estimateCompactSolidTriangles(exported.w, exported.h),
     };
   }, [hmState, meshProfile, decimate]);
+
+  // Istogramma + livelli automatici. Dipende solo da denoise e segmentazione:
+  // trascinare i punti NON lo ricalcola, cosi' la distribuzione resta ferma sotto
+  // le maniglie mentre le muovi.
+  const levelsStats = useMemo(() => {
+    const raw = rawRef.current;
+    if (!raw) return null;
+    return depthLevelsStats(raw, pp);
+  }, [imgDataUrl, quality, pp.skinDenoise, pp.segment, pp.segThreshold, pp.segFeather]);
 
   const prepareExportHeightmap = useCallback(() => {
     if (!hmState) return null;
@@ -1075,6 +1123,45 @@ export default function Studio() {
                 <span style={{ fontSize: 11, color: C.hint }}>—</span>
               )}
             </div>
+
+            {levelsStats && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, fontSize: 11, color: C.muted }}>
+                  <span>Livelli</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", color: pp.levelsAuto ? C.muted : C.text }}>
+                    <input
+                      type="checkbox"
+                      checked={pp.levelsAuto}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setActiveDepthPreset("custom");
+                        // Passando a manuale si parte dai valori automatici correnti:
+                        // il rilievo non salta, e da li' si aggiusta.
+                        setPp((st) => ({ ...st, levelsAuto: on, levelsBlack: levelsStats.lo, levelsWhite: levelsStats.hi }));
+                      }}
+                    />
+                    Auto
+                  </label>
+                </div>
+                <DepthLevels
+                  histogram={levelsStats.histogram}
+                  black={pp.levelsAuto ? levelsStats.lo : pp.levelsBlack}
+                  white={pp.levelsAuto ? levelsStats.hi : pp.levelsWhite}
+                  threshold={pp.segment ? pp.segThreshold : null}
+                  auto={pp.levelsAuto}
+                  accent={C.accent}
+                  onChange={(b, wt) => {
+                    setActiveDepthPreset("custom");
+                    setPp((st) => ({ ...st, levelsBlack: b, levelsWhite: wt }));
+                  }}
+                />
+                <div style={{ fontSize: 10, color: C.hint, marginTop: 5, lineHeight: 1.45 }}>
+                  {pp.levelsAuto
+                    ? "Automatico: il soggetto viene steso su tutta l'altezza. Togli la spunta per scegliere a mano quale profondità diventa il fondo e quale la cima."
+                    : "Trascina i due punti sull'istogramma. In tratteggio azzurro la soglia di segmentazione."}
+                </div>
+              </>
+            )}
           </div>
 
           {commercialMessage.enabled && (

@@ -1,9 +1,9 @@
-RELIEFFORGE V8.6 - ISTRUZIONI
+RELIEFFORGE V8.7 - ISTRUZIONI
 =============================
 
 PER L'UTENTE FINALE
 -------------------
-1. Scarica ReliefForge-Setup-8.6.0.exe (dalla pagina Releases su GitHub).
+1. Scarica ReliefForge-Setup-8.7.0.exe (dalla pagina Releases su GitHub).
 2. Doppio clic sul file e segui la procedura guidata.
 3. Avvia ReliefForge dall'icona sul Desktop o dal menu Start.
 
@@ -13,7 +13,7 @@ Nota: alla prima esecuzione Windows SmartScreen puo' mostrare un avviso
 perche' l'installer non e' firmato digitalmente. Clicca su
 "Ulteriori informazioni" e poi "Esegui comunque".
 
-NOVITA' DELLA V8.6
+NOVITA' DELLA V8.7
 ------------------
 CORNICE E PASSEPARTOUT
 - Il passepartout esportato ora e' un vero anello a gradoni CON apertura.
@@ -32,6 +32,14 @@ CORNICE E PASSEPARTOUT
   4 mm di rilievo per lato. Non e' un difetto: e' la battuta, e una cornice
   vera copre qualche mm di quadro. Nella 8.4 semplicemente non te lo diceva
   nessuno. Se e' troppo, riduci "Larghezza battuta".
+
+LIVELLI SULLA DEPTH MAP
+- Sotto l'anteprima della depth map c'e' l'istogramma della profondita' con due
+  punti trascinabili: il FONDO (quale profondita' diventa il piano) e la CIMA
+  (quale diventa il punto piu' alto). La soglia di segmentazione e' disegnata
+  sopra in tratteggio azzurro, cosi' si vede cosa si sta tagliando.
+- La spunta "Auto" e' attiva di default e si comporta come le versioni precedenti.
+  Togliendola si parte dai valori automatici e si aggiusta a mano.
 
 VISTA MATCAP (predefinita)
 - Il viewport si apre con un'ombreggiatura che dipende solo dall'orientamento
@@ -60,7 +68,7 @@ PER LO SVILUPPATORE: CREARE L'INSTALLER
 Doppio clic su CREA_SETUP_EXE.bat. Lo script:
   1. installa le dipendenze (pnpm install)
   2. compila il frontend (vite build --base=./)
-  3. crea release\ReliefForge-Setup-8.6.0.exe (electron-builder, NSIS)
+  3. crea release\ReliefForge-Setup-8.7.0.exe (electron-builder, NSIS)
 Log completo in crea_setup_log.txt. Non chiudere la finestra nera
 finche' non compare FATTO!
 
