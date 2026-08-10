@@ -12,6 +12,11 @@
 // Qui le quote si calcolano UNA volta sola. Anteprima ed export consumano lo stesso
 // oggetto, quindi la divergenza non e' piu' rappresentabile.
 //
+// V8.5.1 — questo file contiene anche l'ordine corretto delle due aperture della
+// cornice (vassoio davanti per il vetro, apertura dietro che trattiene il rilievo) e
+// l'ancoraggio in Z sulla spalla della battuta. Prima la battuta e il vetro entravano
+// dentro al bassorilievo: vedi CHANGELOG_V8.5.md, difetto 5.
+//
 // Convenzione assi (identica al rilievo prodotto da buildSolidFromHeightmap):
 //   X = larghezza, Y = altezza (il pezzo sta "in piedi"), Z = profondita', +Z verso chi guarda.
 
@@ -109,8 +114,11 @@ export type AssemblyLayout = {
   /** Piani Z del rilievo, GIA' comprensivi di reliefZmm. */
   reliefBackZ: number;
   reliefFrontZ: number;
-  /** Piani Z della cornice. La cornice e' ancorata al fronte NOMINALE del rilievo
-   *  (reliefZmm = 0): lo slider muove il rilievo dentro una cornice ferma. */
+  /** Piani Z della cornice. Con la battuta la cornice e' ancorata in modo che la
+   *  SPALLA della battuta cada sul fronte nominale del rilievo (reliefZmm = 0):
+   *  il vassoio resta davanti, per il vetro. Senza battuta l'ancoraggio e' la
+   *  faccia anteriore. In entrambi i casi lo slider "Profondita' rilievo" muove il
+   *  rilievo dentro una cornice ferma. */
   frameFrontZ: number;
   frameBackZ: number;
   /** Piani Z del passepartout, gia' clampati per non seppellire il rilievo. */
