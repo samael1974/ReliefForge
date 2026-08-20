@@ -265,8 +265,10 @@ export type FrameCfg = {
   glassSeatMm?: number;
   /** Profondita' della sede vetro dal fronte (di norma spessore vetro + gioco). */
   glassSeatDepthMm?: number;
-  /** Spessore del bordino su cui appoggiano vetro e rilievo. */
+  /** Spessore del bordino su cui appoggia il rilievo. */
   lipThickMm?: number;
+  /** Da che lato si infila il bassorilievo: il bordino si mette dal lato opposto. */
+  reliefLoadFrom?: "front" | "back";
   /** Gioco per lato tra rilievo e apertura cornice (mm) — usato SOLO nell'export "solo cornice" */
   reliefGapMm?: number;
 };
@@ -437,10 +439,16 @@ export async function buildReliefAssemblyGeometry(
         // bassorilievo si cala dal FRONTE e la sua faccia posteriore va a battere
         // sulla cornicetta che resta in fondo, dove lo si incolla. Prima il bordino
         // era ricavato scavando, e stava a meta' spessore: il pezzo non entrava.
+        // Il bordino sta sempre dal lato OPPOSTO a quello da cui entra il rilievo.
+        const dalRetro = frame.reliefLoadFrom === "back";
         const lipT = lipT0;
-        const cavDepth = Math.max(0.3, frH - lipT);
+        const seatDepth = hasGlassSeat ? seatD : 0;
+        const cavDepth = Math.max(0.3, frH - lipT - (dalRetro ? seatDepth : 0));
+        const cavCenterZ = dalRetro
+          ? -frH / 2 + cavDepth / 2 - 0.5   // cavita' aperta sul RETRO, bordino davanti
+          : frH / 2 - cavDepth / 2 + 0.5;   // cavita' aperta sul FRONTE, bordino dietro
         const cavity = roundedBox(wasm, backInnerW, backInnerH, cavDepth + 1.0, rBack, segs)
-          .translate([0, 0, frH / 2 - cavDepth / 2 + 0.5]);
+          .translate([0, 0, cavCenterZ]);
         frameM = frameM.subtract(cavity);
 
         if (hasGlassSeat) {

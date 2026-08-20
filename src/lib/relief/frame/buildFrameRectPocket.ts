@@ -37,8 +37,10 @@ export type FrameRectPocketParams = {
   glassSeatMm?: number;
   /** Profondita' della sede vetro dal fronte (di norma spessore vetro + gioco). */
   glassSeatDepthMm?: number;
-  /** Spessore del bordino su cui appoggiano vetro e rilievo. */
+  /** Spessore del bordino su cui appoggia il rilievo. */
   lipThickMm?: number;
+  /** Da che lato si infila il bassorilievo: il bordino va dal lato opposto. */
+  reliefLoadFrom?: "front" | "back";
   /** Raggio di arrotondamento spigoli verticali esterni (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
   /** Segmenti per ciascun angolo a 90° (qualità della curva). Default 6 */
@@ -191,18 +193,32 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
     // Il bordino che sporge verso l'interno regge entrambi, da lati opposti.
     // La cavita' del rilievo resta APERTA sul retro: chiusa da tutti e due i lati,
     // un rilievo stampato a parte non potrebbe piu' entrare.
-    // V8.16 — bordino POSITIVO in fondo: apertura passante, rilievo dal fronte.
-    const yLedge = yH - lipT;
-    addRing(perOuter, hasGlassSeat ? perSeat : perBack, y0, false);  // faccia fronte
+    // Bordino POSITIVO dal lato opposto a quello di inserimento del rilievo.
+    const dalRetro = p.reliefLoadFrom === "back";
     if (hasGlassSeat) {
-      addWall(perSeat, y0, seatDepth, false);      // parete della sede vetro
-      addRing(perSeat, perBack, seatDepth, false); // spallamento: qui batte il VETRO
+      addRing(perOuter, perSeat, y0, false);                       // faccia fronte
+      addWall(perSeat, y0, seatDepth, false);                      // parete sede vetro
+      addRing(perSeat, dalRetro ? perFront : perBack, seatDepth, false); // spallamento del VETRO
+    } else {
+      addRing(perOuter, dalRetro ? perFront : perBack, y0, false); // faccia fronte
     }
-    addWall(perBack, seatDepth, yLedge, false);    // cavita' passante del rilievo
-    addRing(perBack, perFront, yLedge, false);     // faccia del bordino: qui appoggia il RILIEVO
-    addWall(perFront, yLedge, yH, false);          // apertura del bordino
-    addWall(perOuter, y0, yH, true);               // muro esterno
-    addRing(perOuter, perFront, yH, true);         // faccia posteriore (anello del bordino)
+
+    if (dalRetro) {
+      // Rilievo dal RETRO: bordino davanti, cavita' aperta dietro.
+      const yLedgeEnd = seatDepth + lipT;
+      addWall(perFront, seatDepth, yLedgeEnd, false);  // apertura del bordino
+      addRing(perBack, perFront, yLedgeEnd, true);     // faccia del bordino: qui appoggia il RILIEVO
+      addWall(perBack, yLedgeEnd, yH, false);          // cavita', aperta sul retro
+      addRing(perOuter, perBack, yH, true);            // faccia posteriore
+    } else {
+      // Rilievo dal FRONTE: cavita' passante, bordino in fondo.
+      const yLedge = yH - lipT;
+      addWall(perBack, seatDepth, yLedge, false);      // cavita' del rilievo
+      addRing(perBack, perFront, yLedge, false);       // faccia del bordino: qui appoggia il RILIEVO
+      addWall(perFront, yLedge, yH, false);            // apertura del bordino
+      addRing(perOuter, perFront, yH, true);           // faccia posteriore (anello del bordino)
+    }
+    addWall(perOuter, y0, yH, true);                   // muro esterno
   } else if (hasPocket) {
     addRing(perOuter, perBack, y0, false);         // faccia fronte (apertura vassoio grande)
     addWall(perBack, y0, yLip, false);             // parete del vassoio

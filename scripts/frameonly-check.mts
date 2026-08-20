@@ -151,7 +151,7 @@ function apertureLevels(g: any, esternoMax: number): number[] {
   return [...set].sort((a, b) => a - b);
 }
 
-async function cornice(seat: number, seatD: number) {
+async function cornice(seat: number, seatD: number, loadFrom: "front" | "back" = "front") {
   const r = await buildReliefAssemblyGeometry({
     hm: aperturaPiatta(APERTURA_W, APERTURA_H),
     widthMm: APERTURA_W, depthMm: 4, baseMm: 3,
@@ -159,7 +159,7 @@ async function cornice(seat: number, seatD: number) {
     frame: {
       solidMm: BORDO, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
       lipMm: 3.0, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.3,
-      glassSeatMm: seat, glassSeatDepthMm: seatD,
+      glassSeatMm: seat, glassSeatDepthMm: seatD, reliefLoadFrom: loadFrom,
     },
     mat: null,
   } as any);
@@ -306,6 +306,48 @@ check(listaRaggi.some((v) => Math.abs(v - rSedeVetro) < 0.15), `sede vetro a r=$
 const corda = (2 * Math.PI * rEsterno) / Math.max(1, facceEsterne / 2);
 console.log(`  corda sul cerchio esterno: ~${corda.toFixed(2)} mm`);
 check(corda < 2.0, `curva liscia: corda ${corda.toFixed(2)} mm sotto i 2 mm`);
+
+
+// ---------------------------------------------------------------------------
+// VERSO DI INSERIMENTO: il bordino deve stare dal lato OPPOSTO a quello da cui
+// entra il rilievo. Invertendo il verso, le due facce si devono scambiare.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("VERSO DI INSERIMENTO DEL RILIEVO");
+console.log("");
+{
+  const facce = async (loadFrom: "front" | "back") => {
+    const g = await cornice(SEAT, SEAT_D, loadFrom);
+    const pos = g.getAttribute("position");
+    let zMin = Infinity, zMax = -Infinity;
+    for (let i = 0; i < pos.count; i++) { const z = pos.getZ(i); if (z < zMin) zMin = z; if (z > zMax) zMax = z; }
+    let retro = Infinity, fronte = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i), ax = Math.abs(pos.getX(i));
+      if (Math.abs(z - zMin) < 0.05 && ax < retro) retro = ax;
+      if (Math.abs(z - zMax) < 0.05 && ax < fronte) fronte = ax;
+    }
+    return { retro: Math.round(retro * 10) / 10, fronte: Math.round(fronte * 10) / 10 };
+  };
+  const f = await facce("front");
+  const b = await facce("back");
+  console.log(`  dal fronte: retro ${f.retro} mm, fronte ${f.fronte} mm`);
+  console.log(`  dal retro:  retro ${b.retro} mm, fronte ${b.fronte} mm`);
+  // Con il vetro acceso la faccia frontale e' SEMPRE lo scasso del vetro, che e'
+  // il piu' largo: il bordino, quando sta davanti, resta dietro a quello scasso.
+  // Quindi il verso si legge sulla faccia POSTERIORE.
+  check(Math.abs(f.retro - bordino) < 0.15, `dal fronte: dietro c'e' il bordino (${f.retro} mm)`);
+  check(Math.abs(b.retro - vassoio) < 0.15, `dal retro: dietro l'apertura e' piena (${b.retro} mm), il rilievo entra da li'`);
+  check(f.retro < b.retro, "invertendo il verso la faccia posteriore cambia come deve");
+}
+
+// ---------------------------------------------------------------------------
+// PARITA' TONDO / RETTANGOLARE: la cornice tonda deve avere gli stessi gradini
+// di quella rettangolare, non una versione ridotta.
+// ---------------------------------------------------------------------------
+console.log("");
+const raggiInterni = listaRaggi.filter((v) => v < rEsterno - 0.5); // via il muro esterno
+check(raggiInterni.length === con.length, `tonda e rettangolare hanno gli stessi gradini (${raggiInterni.length} vs ${con.length})`);
 
 console.log(fail ? `\n❌ ${fail} controllo/i fallito/i.` : "\n✅ tutti i controlli superati");
 // Niente process.exit(): il WASM di manifold ha ancora handle aperti e libuv

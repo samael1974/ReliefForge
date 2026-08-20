@@ -370,7 +370,7 @@ export default function Studio() {
   const [frameOn, setFrameOn] = useState(false);
   const [matOn, setMatOn] = useState(false);
   const [glassOn, setGlassOn] = useState(false);
-  const [frameP, setFrameP] = useState({ solidMm: 5, frameHeightMm: 21, glassMm: 2 as 2 | 3, glassClearanceMm: 0.25, pocketDepthMm: 3.6, lipMm: 3.0, pocketRadialMm: 3.0, cornerRadiusMm: 0, reliefGapMm: 0.2, glassSeatMm: 2, lipThickMm: 1.6 });
+  const [frameP, setFrameP] = useState({ solidMm: 5, frameHeightMm: 21, glassMm: 2 as 2 | 3, glassClearanceMm: 0.25, pocketDepthMm: 3.6, lipMm: 3.0, pocketRadialMm: 3.0, cornerRadiusMm: 0, reliefGapMm: 0.2, glassSeatMm: 2, lipThickMm: 1.6, reliefLoadFrom: "front" as "front" | "back" });
   const [matP, setMatP] = useState({ steps: 1 as 1 | 2 | 3 | 4 | 5 | 6, totalBandsMm: 10, minBandMm: 6, thicknessMm: 2, stepDropMm: 2, matDropMm: 2.5, reliefGapMm: 0.35 });
   const [glassP, setGlassP] = useState({ lipWmm: 3, lipThkmm: 3 });
   const [rimOn, setRimOn] = useState(false);  // veletta LED positiva sul fronte
@@ -718,7 +718,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom } : null,
       } as any);
       setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
@@ -746,7 +746,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom } : null,
       } as any);
       setStatus("STL solo cornice esportato (stampa separata).");
     } catch (e: any) { setStatus("Errore export cornice: " + (e?.message ?? String(e))); }
@@ -1297,10 +1297,22 @@ export default function Studio() {
                     <Toggle label="Bordino d'appoggio del rilievo" on={glassSeatOn} onChange={setGlassSeatOn} />
                     {glassSeatOn && (
                       <>
+                        <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Il rilievo si inserisce</div>
+                        <div style={{ display: "flex", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 11, marginBottom: 10 }}>
+                          {([["front", "Dal fronte"], ["back", "Dal retro"]] as ["front" | "back", string][]).map(([id, label], i) => (
+                            <button key={id} onClick={() => setFrameP((st) => ({ ...st, reliefLoadFrom: id }))} style={{
+                              flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
+                              borderLeft: i ? `1px solid ${C.border2}` : "none",
+                              background: frameP.reliefLoadFrom === id ? C.accent : "transparent",
+                              color: frameP.reliefLoadFrom === id ? C.accentInk : C.muted,
+                              fontWeight: frameP.reliefLoadFrom === id ? 600 : 400,
+                            }}>{label}</button>
+                          ))}
+                        </div>
                         <Slider label="Sporgenza bordino" value={frameP.lipMm} min={1} max={20} step={0.1} suffix=" mm" onChange={(v) => setFP("lipMm", v)} />
                         <Slider label="Spessore bordino" value={frameP.lipThickMm} min={0.4} max={10} step={0.1} suffix=" mm" onChange={(v) => setFP("lipThickMm", v)} />
                         <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 2 }}>
-                          Cornicetta <b>fusa</b> alla cornice, in fondo all'apertura. Il bassorilievo si cala <b>dal fronte</b> e la sua faccia posteriore ci appoggia sopra: lì lo incolli. L'apertura è passante e larga quanto il rilievo più {frameP.reliefGapMm} mm per lato.
+                          Cornicetta <b>fusa</b> alla cornice, messa dal lato <b>opposto</b> a quello di inserimento. Il bassorilievo si cala {frameP.reliefLoadFrom === "back" ? "dal retro" : "dal fronte"} e ci appoggia contro: lì lo incolli. L'apertura è larga quanto il rilievo più {frameP.reliefGapMm} mm per lato.
                         </div>
 
                         <div style={{ borderTop: `1px solid ${C.border}`, margin: "10px 0 8px" }} />
