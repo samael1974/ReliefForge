@@ -166,8 +166,9 @@ function ReliefPreview3DScene({
         height01: hmState.normF32, width: hmState.w, height: hmState.h,
         outDiameterMm: circularDiameterMm,
         depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
-        // In anteprima bastano meno anelli: la resa non cambia, la reattivita' si'.
-        radialSteps: 120, angularSteps: 240,
+        // In anteprima si usa un budget di celle piu' basso, ma la DENSITA' resta
+        // proporzionale al sorgente: e' quello che determina la resa del rilievo.
+        maxCells: Math.max(60_000, maxPreviewCells ?? 260_000),
       });
       return toBufferGeometry(out.vertices, out.indices);
     }

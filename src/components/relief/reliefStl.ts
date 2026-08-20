@@ -417,9 +417,14 @@ export async function buildReliefAssemblyGeometry(
 
       const seat = Math.max(0, frame.glassSeatMm ?? 0);
       const seatD = Math.max(0, frame.glassSeatDepthMm ?? 0);
-      const hasSeat = hasPocket && seat > 0.01 && seatD > 0.01 && seatD < pocketDepth - 0.05;
+      // Il BORDINO d'appoggio del rilievo e la SEDE del vetro sono due cose distinte:
+      // il bordino puo' esistere da solo (ci si incolla sopra il bassorilievo), la sede
+      // vetro e' un secondo scasso frontale che si aggiunge quando serve il vetro.
+      const lipT0 = Math.max(0.4, frame.lipThickMm ?? 1.6);
+      const hasLedge = lip > 0.01 && lipT0 < frH - 0.3;
+      const hasGlassSeat = hasLedge && seat > 0.01 && seatD > 0.01 && seatD + lipT0 < frH - 0.3;
 
-      if (hasSeat) {
+      if (hasLedge) {
         // MONTAGGIO REALE (V8.13): il vetro entra dal FRONTE nella sede a L, il
         // bassorilievo entra dal RETRO. Il bordino che sporge verso l'interno fa da
         // appoggio a entrambi, da lati opposti. Quote a partire dal fronte (+z):
@@ -427,17 +432,20 @@ export async function buildReliefAssemblyGeometry(
         // La cavita' del rilievo deve restare l'apertura piu' grande e APERTA sul
         // retro: se fosse chiusa da entrambi i lati, un rilievo stampato a parte non
         // potrebbe piu' entrare.
-        const lipT = Math.max(0.4, frame.lipThickMm ?? 1.6);
-        const glassW = Math.min(backInnerW - 0.2, frontInnerW + 2 * seat);
-        const glassH = Math.min(backInnerH - 0.2, frontInnerH + 2 * seat);
-        const rGlass = Math.max(0, R - frame.solidMm - Math.max(0, lip - seat));
-
-        const glassRecess = roundedBox(wasm, glassW, glassH, seatD + 1.0, rGlass, segs)
-          .translate([0, 0, frH / 2 - seatD / 2 + 0.5]);
-        const cavDepth = Math.max(0.3, frH - seatD - lipT);
+        const lipT = lipT0;
+        const frontDepth = hasGlassSeat ? seatD : 0;
+        const cavDepth = Math.max(0.3, frH - frontDepth - lipT);
         const cavity = roundedBox(wasm, backInnerW, backInnerH, cavDepth + 1.0, rBack, segs)
           .translate([0, 0, -frH / 2 + cavDepth / 2 - 0.5]);
-        frameM = frameM.subtract(glassRecess).subtract(cavity);
+        frameM = frameM.subtract(cavity);
+        if (hasGlassSeat) {
+          const glassW = Math.min(backInnerW - 0.2, frontInnerW + 2 * seat);
+          const glassH = Math.min(backInnerH - 0.2, frontInnerH + 2 * seat);
+          const rGlass = Math.max(0, R - frame.solidMm - Math.max(0, lip - seat));
+          const glassRecess = roundedBox(wasm, glassW, glassH, seatD + 1.0, rGlass, segs)
+            .translate([0, 0, frH / 2 - seatD / 2 + 0.5]);
+          frameM = frameM.subtract(glassRecess);
+        }
       } else if (hasPocket) {
         // Vassoio scavato dal FRONTE (lato in vista), così il vetro si appoggia/incolla
         // sul davanti del rilievo. Asse Z (locale): cornice centrata in z=0 → z ∈ [-frH/2, +frH/2].

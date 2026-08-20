@@ -77,7 +77,7 @@ const tA0 = performance.now();
 const diretta = buildCircularSolidFromHeightmap({
   height01, width: W, height: H,
   outDiameterMm: DIAMETRO, depthMm: DEPTH, baseMm: BASE,
-  radialSteps: 180, angularSteps: 360,
+  // Niente passi fissi: la densita' la decide la risoluzione del sorgente.
 });
 const tA = performance.now() - tA0;
 
@@ -153,6 +153,20 @@ console.log(`   rettangolare: X [${bR.x0.toFixed(2)}, ${bR.x1.toFixed(2)}]  Y [$
 check(Math.abs(bA.cx - bR.cx) < 0.01, `stesso centro in X (${bA.cx.toFixed(2)} vs ${bR.cx.toFixed(2)})`);
 check(Math.abs(bA.cy - bR.cy) < 0.01, `stesso centro in Y (${bA.cy.toFixed(2)} vs ${bR.cy.toFixed(2)})`);
 check(Math.abs(bA.z0 - bR.z0) < 0.01, `stessa quota di base in Z (${bA.z0.toFixed(2)} vs ${bR.z0.toFixed(2)})`);
+console.log("");
+
+// FEDELTA' DI CAMPIONAMENTO: e' la misura che mancava al primo benchmark. Un bordo
+// perfetto e un tempo ottimo non servono a niente se la superficie viene campionata
+// molto piu' grossa del pixel del sorgente: il rilievo esce impastato.
+const pxMm = DIAMETRO / Math.min(W, H);
+// I segmenti sul bordo si contano dai vertici che stanno sul raggio esterno, non
+// stimandoli dal totale dei triangoli: la griglia polare non e' quadrata, i passi
+// angolari sono molti piu' di quelli radiali e la stima sbaglierebbe di 2-3 volte.
+const segmentiBordo = Math.max(1, bordoA.n / 2);
+const passoBordo = (Math.PI * DIAMETRO) / segmentiBordo;
+console.log("FEDELTA' DI CAMPIONAMENTO");
+console.log(`   pixel del sorgente ${pxMm.toFixed(3)} mm   passo sul bordo ${passoBordo.toFixed(3)} mm (${segmentiBordo} segmenti)`);
+check(passoBordo < pxMm * 1.5, `il bordo e' campionato come il sorgente (${(passoBordo / pxMm).toFixed(2)}x il pixel)`);
 console.log("");
 
 check(apertiA === 0, "A: mesh chiusa (watertight per costruzione)");

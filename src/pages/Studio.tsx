@@ -1272,7 +1272,7 @@ export default function Studio() {
                             <span>Arrotonda bordi</span><span style={{ color: C.hint }}>🔒 forma tonda</span>
                           </div>
                         ) : (
-                          <Slider label="Arrotonda bordi" value={frameP.cornerRadiusMm} min={0} max={12} step={0.5} suffix=" mm" onChange={(v) => setFP("cornerRadiusMm", v)} />
+                          <Slider label="Arrotonda bordi" value={frameP.cornerRadiusMm} min={0} max={30} step={0.5} suffix=" mm" onChange={(v) => setFP("cornerRadiusMm", v)} />
                         )}
 
                       </>
@@ -1294,17 +1294,27 @@ export default function Studio() {
                   <>
                     <div style={{ borderTop: `1px solid ${C.border}`, margin: "10px 0 8px" }} />
                     <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 8 }}>Vetro e illuminazione</div>
-                    <Toggle label="Battuta vetro (appoggio a L)" on={glassSeatOn} onChange={setGlassSeatOn} />
+                    <Toggle label="Bordino d'appoggio del rilievo" on={glassSeatOn} onChange={setGlassSeatOn} />
                     {glassSeatOn && (
                       <>
-                        <Slider label="Sporgenza bordino" value={frameP.lipMm} min={1} max={8} step={0.1} suffix=" mm" onChange={(v) => setFP("lipMm", v)} />
-                        <Slider label="Spessore bordino" value={frameP.lipThickMm} min={0.4} max={6} step={0.1} suffix=" mm" onChange={(v) => setFP("lipThickMm", v)} />
-                        <Slider label="Sovrapposizione vetro" value={frameP.glassSeatMm} min={0} max={6} step={0.1} suffix=" mm" onChange={(v) => setFP("glassSeatMm", v)} />
-                        <Slider label="Spessore vetro" value={frameP.glassMm} min={2} max={3} step={1} suffix=" mm" onChange={(v) => setFrameP((s) => ({ ...s, glassMm: v as 2 | 3, pocketDepthMm: Math.max(s.pocketDepthMm, v + 0.5) }))} />
-                        <Slider label="Gioco per lato" value={frameP.glassClearanceMm} min={0} max={1} step={0.05} suffix=" mm" onChange={(v) => setFP("glassClearanceMm", v)} />
+                        <Slider label="Sporgenza bordino" value={frameP.lipMm} min={1} max={20} step={0.1} suffix=" mm" onChange={(v) => setFP("lipMm", v)} />
+                        <Slider label="Spessore bordino" value={frameP.lipThickMm} min={0.4} max={10} step={0.1} suffix=" mm" onChange={(v) => setFP("lipThickMm", v)} />
                         <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 2 }}>
-                          <b style={{ color: C.muted }}>Montaggio:</b> il vetro entra <b>dal fronte</b> nella sede a L, profonda 🔒 {glassSeatDepth.toFixed(2)} mm (spessore + gioco). Il bassorilievo entra <b>dal retro</b> e appoggia sul bordino. La cavità del rilievo è larga quanto il rilievo più {frameP.reliefGapMm} mm per lato e resta aperta dietro, così il pezzo stampato a parte entra.
+                          Il bassorilievo entra <b>dal retro</b> e appoggia su questo bordino, dove lo puoi incollare. La cavità è larga quanto il rilievo più {frameP.reliefGapMm} mm per lato e resta aperta dietro, così il pezzo stampato a parte entra.
                         </div>
+
+                        <div style={{ borderTop: `1px solid ${C.border}`, margin: "10px 0 8px" }} />
+                        <Toggle label="Sede vetro a L (dentino frontale)" on={frameP.glassSeatMm > 0} onChange={(on) => setFP("glassSeatMm", on ? 2 : 0)} />
+                        {frameP.glassSeatMm > 0 && (
+                          <>
+                            <Slider label="Sovrapposizione vetro" value={frameP.glassSeatMm} min={0.2} max={6} step={0.1} suffix=" mm" onChange={(v) => setFP("glassSeatMm", v)} />
+                            <Slider label="Spessore vetro" value={frameP.glassMm} min={2} max={3} step={1} suffix=" mm" onChange={(v) => setFrameP((s) => ({ ...s, glassMm: v as 2 | 3 }))} />
+                            <Slider label="Gioco vetro per lato" value={frameP.glassClearanceMm} min={0} max={1} step={0.05} suffix=" mm" onChange={(v) => setFP("glassClearanceMm", v)} />
+                            <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 2 }}>
+                              Scasso frontale <b>indipendente</b> dal bordino: il vetro entra dal fronte e batte sul bordino dal lato opposto al rilievo. Profondità 🔒 {glassSeatDepth.toFixed(2)} mm (spessore + gioco).
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                     <Toggle label="Alloggiamento vetro (scasso a U)" on={glassOn} onChange={(enabled) => { setGlassOn(enabled); if (enabled) setGlassSeatOn(false); }} />

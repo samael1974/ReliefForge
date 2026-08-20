@@ -108,7 +108,10 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const seat = Math.max(0, p.glassSeatMm ?? 0);
   const seatD = Math.max(0, p.glassSeatDepthMm ?? 0);
   const lipT = Math.max(0.4, p.lipThickMm ?? 1.6);
-  const hasSeat = lip > 0 && seat > 0.01 && seatD > 0.01 && seatD + lipT < height - 0.2;
+  // Bordino d'appoggio e sede vetro sono indipendenti: vedi reliefStl.
+  const hasLedge = lip > 0.01 && lipT < height - 0.2;
+  const hasGlassSeat = hasLedge && seat > 0.01 && seatD > 0.01 && seatD + lipT < height - 0.2;
+  const seatDepth = hasGlassSeat ? seatD : 0;
   // Sede vetro: apertura visibile allargata della sovrapposizione del vetro.
   const wSeat = Math.min(wBack - 0.2, Math.max(0.5, wBack - 2 * lip + 2 * seat));
   const hSeat = Math.min(hBack - 0.2, Math.max(0.5, hBack - 2 * lip + 2 * seat));
@@ -137,7 +140,7 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const perFront = hasPocket
     ? roundedRectPerimeter(wFront / 2, hFront / 2, rFront, segPerCorner)
     : perBack;
-  const perSeat = hasSeat
+  const perSeat = hasGlassSeat
     ? roundedRectPerimeter(wSeat / 2, hSeat / 2, rSeat, segPerCorner)
     : perBack;
   const N = perOuter.length;
@@ -182,16 +185,18 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
     }
   };
 
-  if (hasSeat) {
+  if (hasLedge) {
     // MONTAGGIO REALE (V8.13): vetro dal FRONTE nella sede a L, rilievo dal RETRO.
     // Il bordino che sporge verso l'interno regge entrambi, da lati opposti.
     // La cavita' del rilievo resta APERTA sul retro: chiusa da tutti e due i lati,
     // un rilievo stampato a parte non potrebbe piu' entrare.
-    const yLedge = seatD + lipT;
-    addRing(perOuter, perSeat, y0, false);         // faccia fronte
-    addWall(perSeat, y0, seatD, false);            // parete della sede vetro
-    addRing(perSeat, perFront, seatD, false);      // fondo sede vetro: qui appoggia il VETRO
-    addWall(perFront, seatD, yLedge, false);       // apertura visibile = spessore del bordino
+    const yLedge = seatDepth + lipT;
+    addRing(perOuter, hasGlassSeat ? perSeat : perFront, y0, false);   // faccia fronte
+    if (hasGlassSeat) {
+      addWall(perSeat, y0, seatDepth, false);      // parete della sede vetro
+      addRing(perSeat, perFront, seatDepth, false); // fondo sede vetro: qui appoggia il VETRO
+    }
+    addWall(perFront, seatDepth, yLedge, false);   // apertura visibile = spessore del bordino
     addRing(perBack, perFront, yLedge, true);      // retro del bordino: qui appoggia il RILIEVO
     addWall(perBack, yLedge, yH, false);           // cavita' del rilievo, aperta sul retro
     addWall(perOuter, y0, yH, true);               // muro esterno

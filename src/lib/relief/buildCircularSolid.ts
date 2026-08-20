@@ -23,10 +23,12 @@ export type BuildCircularSolidInput = {
   depthMm: number;
   /** Spessore della base sotto il rilievo in mm. */
   baseMm: number;
-  /** Anelli radiali. Piu' anelli = piu' fedelta' radiale. */
+  /** Anelli radiali. Se assente si ricava dalla risoluzione del sorgente. */
   radialSteps?: number;
-  /** Segmenti sulla circonferenza. Determina la finezza del bordo. */
+  /** Segmenti sulla circonferenza. Se assente si ricava dal sorgente. */
   angularSteps?: number;
+  /** Tetto al numero di celle (anelli x segmenti). L'anteprima ne usa meno dell'export. */
+  maxCells?: number;
   /** Inverte le altezze. */
   invert?: boolean;
 };
@@ -56,8 +58,18 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
   const depth = Math.max(0, input.depthMm);
   const base = Math.max(0.1, input.baseMm);
 
-  const na = Math.max(24, Math.round(input.angularSteps ?? 256));
-  const nr = Math.max(2, Math.round(input.radialSteps ?? 160));
+  // Densita' di campionamento legata al SORGENTE, non a numeri fissi. Con passi
+  // costanti il bordo del disco veniva campionato fino a 9 volte piu' grosso del
+  // pixel dell'immagine, e il rilievo usciva impastato.
+  const pxMm = R * 2 / Math.max(2, Math.min(w, h));
+  let na = Math.max(24, Math.round(input.angularSteps ?? Math.ceil((2 * Math.PI * R) / pxMm)));
+  let nr = Math.max(2, Math.round(input.radialSteps ?? Math.ceil(R / pxMm)));
+  const budget = Math.max(10_000, input.maxCells ?? 1_400_000);
+  if (na * nr > budget) {
+    const k = Math.sqrt(budget / (na * nr));
+    na = Math.max(64, Math.round(na * k));
+    nr = Math.max(32, Math.round(nr * k));
+  }
 
   // Il cerchio e' inscritto nel quadrato centrato dell'immagine: cosi' un ritratto
   // resta centrato e non si deforma.
