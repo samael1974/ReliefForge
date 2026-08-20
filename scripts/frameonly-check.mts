@@ -72,6 +72,61 @@ check(dz > 0.5, `spessore reale (${dz.toFixed(2)} mm)`);
 // senza heightmap l'impronta ripiegava su un quadrato di lato = larghezza.
 check(Math.abs(dx - dy) > 1, `l'apertura rettangolare e' stata rispettata (non un quadrato)`);
 
+
+// ---------------------------------------------------------------------------
+// CORNICE ROTONDA
+// Un cerchio e' un rettangolo con raggio d'angolo pari a meta' lato: roundedBox
+// clampa il raggio a w/2, quindi un raggio enorme rende tondo ogni pezzo alla
+// propria misura. Qui si verifica che il risultato sia davvero un cerchio.
+// ---------------------------------------------------------------------------
+const DIAMETRO = 120;
+console.log(`
+SOLA CORNICE ROTONDA — diametro ${DIAMETRO} mm, bordo ${BORDO} mm
+`);
+
+const tonda = await buildReliefAssemblyGeometry({
+  hm: aperturaPiatta(DIAMETRO, DIAMETRO),
+  widthMm: DIAMETRO,
+  depthMm: 4,
+  baseMm: 3,
+  outputMode: "relief",
+  baseStyle: "flat",
+  frameOnly: true,
+  frame: {
+    solidMm: BORDO, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
+    lipMm: 3.0, pocketDepthMm: 3.6, cornerRadiusMm: 1e6, reliefGapMm: 0.3,
+  },
+  mat: null,
+} as any);
+
+const gp = tonda.geometry.getAttribute("position");
+const gtri = tonda.geometry.index ? tonda.geometry.index.count / 3 : gp.count / 3;
+tonda.geometry.computeBoundingBox();
+const tb = tonda.geometry.boundingBox!;
+const tdx = tb.max.x - tb.min.x;
+const tdy = tb.max.y - tb.min.y;
+console.log(`  ingombro esterno: ${tdx.toFixed(2)} x ${tdy.toFixed(2)} mm, ${gtri} triangoli`);
+
+// Un cerchio ha larghezza e altezza uguali: se restasse un rettangolo, qui si vede.
+check(Math.abs(tdx - tdy) < 0.5, `sezione circolare (scarto X-Y ${Math.abs(tdx - tdy).toFixed(3)} mm)`);
+
+// Il bordo reale non e' solo solidMm: fra apertura e bordo ci sono anche la
+// battuta (lipMm) e il gioco per il rilievo (reliefGapMm). Misurato sul caso
+// rettangolare qui sopra: 146.60 - 130 = 16.60 = 2 x (5 + 3.0 + 0.3).
+const BORDO_REALE = BORDO + 3.0 + 0.3;
+const attesoEsterno = DIAMETRO + 2 * BORDO_REALE;
+check(Math.abs(tdx - attesoEsterno) < 1, `diametro esterno = apertura + 2 x (bordo + battuta + gioco) (${tdx.toFixed(2)} vs ${attesoEsterno.toFixed(2)})`);
+
+// Una circonferenza discretizzata costa molti piu' triangoli di 4 spigoli vivi:
+// se il numero restasse quello della cornice quadra, il tondo non c'e'.
+check(gtri > 200, `circonferenza discretizzata, non 4 spigoli (${gtri} triangoli)`);
+
+let tfiniti = true;
+for (let i = 0; i < gp.count && tfiniti; i++) {
+  if (!Number.isFinite(gp.getX(i)) || !Number.isFinite(gp.getY(i)) || !Number.isFinite(gp.getZ(i))) tfiniti = false;
+}
+check(tfiniti, "nessun vertice non finito");
+
 console.log(fail ? `\n❌ ${fail} controllo/i fallito/i.` : "\n✅ tutti i controlli superati");
 // Niente process.exit(): il WASM di manifold ha ancora handle aperti e libuv
 // aborta con un assertion, facendo fallire la CI anche quando i controlli passano.

@@ -37,6 +37,9 @@ type Quality = "small" | "base" | "large";
 type Raw = { depth: Float32Array; luma: Float32Array | null; w: number; h: number; device: string };
 
 /** Diagnostica di una depth map importata: serve a spiegare un rilievo piatto prima che sembri un bug. */
+/** Forma dell'apertura del progetto. Predisposto per ovale e arco. */
+type ProjectShape = "rect" | "square" | "circle";
+
 type DepthImportInfo = {
   name: string; w: number; h: number; bitDepth: number; lossy: boolean;
   min: number; max: number; resampledTo: string | null;
@@ -356,6 +359,10 @@ export default function Studio() {
   // Progetto di sola cornice: senza rilievo l'altezza dell'apertura non si puo'
   // dedurre da nessuna proporzione, va dichiarata.
   const [openingHmm, setOpeningHmm] = useState(100);
+  // Forma dell'apertura. Vale solo nei progetti senza rilievo: un rilievo
+  // rettangolare dentro una cornice tonda e' una combinazione ambigua, esclusa
+  // per ora dalla roadmap. Con un rilievo caricato si torna d'ufficio a "rect".
+  const [shape, setShape] = useState<ProjectShape>("rect");
   const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
   const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
@@ -387,7 +394,18 @@ export default function Studio() {
       : { ...s, lipMm: 0, pocketDepthMm: 0 });
   };
   const commercialHref = commercialMessage.href.trim();
-  const previewFrame = useMemo(() => ({ enabled: frameOn, ...frameP }), [frameOn, frameP]);
+  // Un cerchio e' un rettangolo con raggio d'angolo pari a meta' lato: roundedBox
+  // clampa il raggio a w/2, quindi un raggio enorme rende tondo OGNI pezzo
+  // (cornice, battuta, vetro, veletta) alla propria misura, senza codice nuovo.
+  const effShape: ProjectShape = hmState ? "rect" : shape;
+  const openingH = effShape === "rect" ? openingHmm : widthMm;
+  const frameCornerR = effShape === "circle" ? 1e6 : frameP.cornerRadiusMm;
+  const frameForBuild = useMemo(
+    () => ({ ...frameP, cornerRadiusMm: frameCornerR }),
+    [frameP, frameCornerR],
+  );
+
+  const previewFrame = useMemo(() => ({ enabled: frameOn, ...frameForBuild }), [frameOn, frameForBuild]);
   const previewMat = useMemo(() => ({ enabled: matOn, ...matP }), [matOn, matP]);
   const previewGlassSlot = useMemo(() => ({ enabled: glassOn, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm }), [glassOn, glassP]);
   const previewLedValance = useMemo(() => ({ enabled: rimOn, widthMm: rimW, depthMm: rimD }), [rimOn, rimW, rimD]);
@@ -687,7 +705,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameP.cornerRadiusMm, reliefGapMm: frameP.reliefGapMm } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm } : null,
       } as any);
       setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
@@ -697,9 +715,9 @@ export default function Studio() {
    *  le quote alla cornice: con frameOnly il rilievo non finisce nell'export. */
   const openingOnlyHm = useCallback(() => {
     const w = 65;
-    const h = Math.max(2, Math.round(64 * Math.max(1, openingHmm) / Math.max(1, widthMm)) + 1);
+    const h = Math.max(2, Math.round(64 * Math.max(1, openingH) / Math.max(1, widthMm)) + 1);
     return { normF32: new Float32Array(w * h), w, h };
-  }, [openingHmm, widthMm]);
+  }, [openingH, widthMm]);
 
   const exportFrameOnly = useCallback(async () => {
     if (!frameOn && !matOn) { setStatus("Attiva Cornice o Passepartout."); return; }
@@ -715,7 +733,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameP.cornerRadiusMm, reliefGapMm: frameP.reliefGapMm } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm } : null,
       } as any);
       setStatus("STL solo cornice esportato (stampa separata).");
     } catch (e: any) { setStatus("Errore export cornice: " + (e?.message ?? String(e))); }
@@ -947,7 +965,7 @@ export default function Studio() {
             </button>
           )}
           {(hmState || frameOn || matOn) ? (
-            <ReliefPreview3D hmState={hmState} openingHeightMm={openingHmm} stlWidthMm={widthMm} decimateStep={decimate}
+            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
               depthMm={depthMm} baseMm={baseMm} baseStyle={"flat" as any} outputMode={"relief"} bgColor={C.viewport}
               reliefZmm={reliefZ}
@@ -1160,10 +1178,42 @@ export default function Studio() {
                     </>
                   ) : (
                     <>
-                      <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                      <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
-                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
-                        Progetto di sola cornice. Se apri un'immagine o una depth map, l'apertura si adatta da sola alle sue proporzioni.
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Forma</div>
+                      <div style={{ display: "flex", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 11, marginBottom: 12 }}>
+                        {([["rect", "Rettangolare"], ["square", "Quadrata"], ["circle", "Rotonda"]] as [ProjectShape, string][]).map(([id, label], i) => (
+                          <button key={id} onClick={() => setShape(id)} style={{
+                            flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
+                            borderLeft: i ? `1px solid ${C.border2}` : "none",
+                            background: shape === id ? C.accent : "transparent",
+                            color: shape === id ? C.accentInk : C.muted,
+                            fontWeight: shape === id ? 600 : 400,
+                          }}>{label}</button>
+                        ))}
+                      </div>
+
+                      {shape === "circle" ? (
+                        <>
+                          <Slider label="Diametro apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                          <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                            Battuta, vetro e veletta seguono lo stesso profilo tondo. Il diametro esterno reale è in <b style={{ color: C.muted }}>Quote risultanti</b> qui sotto: oltre al bordo contano anche battuta e gioco.
+                          </div>
+                        </>
+                      ) : shape === "square" ? (
+                        <>
+                          <Slider label="Lato apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                          <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                            🔒 Altezza uguale alla larghezza.
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                          <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                        </>
+                      )}
+
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 8 }}>
+                        Progetto di sola cornice. Se apri un'immagine o una depth map, l'apertura torna rettangolare e si adatta alle sue proporzioni.
                       </div>
                     </>
                   )}
@@ -1209,7 +1259,13 @@ export default function Studio() {
                     </button>
                     {frameAdvanced && (
                       <>
-                        <Slider label="Arrotonda bordi" value={frameP.cornerRadiusMm} min={0} max={12} step={0.5} suffix=" mm" onChange={(v) => setFP("cornerRadiusMm", v)} />
+                        {effShape === "circle" ? (
+                          <div style={{ ...fieldLabel }}>
+                            <span>Arrotonda bordi</span><span style={{ color: C.hint }}>🔒 forma tonda</span>
+                          </div>
+                        ) : (
+                          <Slider label="Arrotonda bordi" value={frameP.cornerRadiusMm} min={0} max={12} step={0.5} suffix=" mm" onChange={(v) => setFP("cornerRadiusMm", v)} />
+                        )}
                       </>
                     )}
                   </>
