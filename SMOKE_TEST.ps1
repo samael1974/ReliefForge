@@ -20,6 +20,7 @@ if (-not $SoloApp) {
         "Mesh adattiva"              = { pnpm adaptive:check }
         "Curva tonale"               = { pnpm curve:check }
         "Invarianza STL"             = { pnpm stl:check }
+        "Sola cornice"               = { pnpm frameonly:check }
     }
     $i = 0
     foreach ($k in $passi.Keys) {

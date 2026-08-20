@@ -353,6 +353,9 @@ export default function Studio() {
   const [depthMm, setDepthMm] = useState(DEPTH_PRESETS.ritratto.relief.depthMm);
   const [baseMm, setBaseMm] = useState(DEPTH_PRESETS.ritratto.relief.baseMm);
   const [widthMm, setWidthMm] = useState(DEPTH_PRESETS.ritratto.relief.widthMm);
+  // Progetto di sola cornice: senza rilievo l'altezza dell'apertura non si puo'
+  // dedurre da nessuna proporzione, va dichiarata.
+  const [openingHmm, setOpeningHmm] = useState(100);
   const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
   const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
@@ -690,12 +693,20 @@ export default function Studio() {
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
   }, [hmState, frameOn, matOn, glassOn, frameP, matP, glassP, widthMm, depthMm, baseMm, prepareExportHeightmap, reliefZ, matZ, rimOn, rimW, rimD]);
 
+  /** Heightmap piatta con le proporzioni dell'apertura dichiarata. Serve solo a dare
+   *  le quote alla cornice: con frameOnly il rilievo non finisce nell'export. */
+  const openingOnlyHm = useCallback(() => {
+    const w = 65;
+    const h = Math.max(2, Math.round(64 * Math.max(1, openingHmm) / Math.max(1, widthMm)) + 1);
+    return { normF32: new Float32Array(w * h), w, h };
+  }, [openingHmm, widthMm]);
+
   const exportFrameOnly = useCallback(async () => {
     if (!frameOn && !matOn) { setStatus("Attiva Cornice o Passepartout."); return; }
-    if (!hmState) { setStatus("Genera prima il rilievo (serve per le proporzioni)."); return; }
     setStatus("Genero la sola cornice…");
     try {
-      const hm = prepareExportHeightmap();
+      // Senza rilievo le proporzioni vengono dall'apertura dichiarata.
+      const hm = hmState ? prepareExportHeightmap() : openingOnlyHm();
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
@@ -708,7 +719,7 @@ export default function Studio() {
       } as any);
       setStatus("STL solo cornice esportato (stampa separata).");
     } catch (e: any) { setStatus("Errore export cornice: " + (e?.message ?? String(e))); }
-  }, [hmState, frameOn, matOn, glassOn, frameP, matP, glassP, widthMm, depthMm, baseMm, prepareExportHeightmap, reliefZ, matZ, rimOn, rimW, rimD]);
+  }, [hmState, frameOn, matOn, glassOn, frameP, matP, glassP, widthMm, depthMm, baseMm, prepareExportHeightmap, openingOnlyHm, reliefZ, matZ, rimOn, rimW, rimD]);
 
   // V8.4: terza modalità — rilievo + passepartout fusi, SENZA cornice
   // (la cornice si stampa a parte con "Solo cornice" e il gioco regolabile).
@@ -936,7 +947,7 @@ export default function Studio() {
             </button>
           )}
           {hmState ? (
-            <ReliefPreview3D hmState={hmState} stlWidthMm={widthMm} decimateStep={decimate}
+            <ReliefPreview3D hmState={hmState} openingHeightMm={openingHmm} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
               depthMm={depthMm} baseMm={baseMm} baseStyle={"flat" as any} outputMode={"relief"} bgColor={C.viewport}
               reliefZmm={reliefZ}
@@ -989,6 +1000,15 @@ export default function Studio() {
                 </button>
                 <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 8 }}>
                   Salta la stima AI e usa una depth map elaborata altrove. Non serve nessuna immagine. PNG 16 bit è il formato di riferimento.
+                </div>
+
+                <div style={{ height: 1, background: C.border, margin: "18px 0 14px" }} />
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Oppure: nessuna immagine</div>
+                <button onClick={() => { setFrameOn(true); setStep("frame"); setStatus("Progetto di sola cornice: imposta le quote dell'apertura."); }} style={{ ...ghostBtn, width: "100%", justifyContent: "center" }}>
+                  <FrameIcon size={15} /> Crea solo cornice
+                </button>
+                <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 8 }}>
+                  Cornice parametrica senza bassorilievo: dichiari larghezza e altezza dell'apertura ed esporti la sola cornice.
                 </div>
 
                 {depthError && (
@@ -1084,6 +1104,9 @@ export default function Studio() {
                 <Slider strong label="Profondità" value={depthMm} min={0.5} max={20} step={0.5} suffix=" mm" onChange={setDepthMm} />
                 <Slider label="Base" value={baseMm} min={0} max={8} step={0.5} suffix=" mm" onChange={setBaseMm} />
                 <Slider label="Larghezza" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                {!hmState && (
+                  <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted, margin: "-4px 0 12px" }}>
                   <span>Altezza (auto)</span>
                   <span style={{ color: C.text }}>{hmState ? Math.round(widthMm * hmState.h / hmState.w) : "—"} mm</span>
@@ -1210,7 +1233,7 @@ export default function Studio() {
                 <button onClick={exportAssembly} disabled={!hmState || (!frameOn && !matOn)} style={{ ...primaryBtn, width: "100%", justifyContent: "center", marginTop: 12, opacity: hmState && (frameOn || matOn) ? 1 : 0.5 }}>
                   <Download size={15} /> Cornice + rilievo (fuso)
                 </button>
-                <button onClick={exportFrameOnly} disabled={!hmState || (!frameOn && !matOn)} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: hmState && (frameOn || matOn) ? 1 : 0.5 }}>
+                <button onClick={exportFrameOnly} disabled={!frameOn && !matOn} style={{ ...ghostBtn, width: "100%", justifyContent: "center", marginTop: 8, opacity: (frameOn || matOn) ? 1 : 0.5 }}>
                   <Download size={15} /> Solo cornice (STL separato)
                 </button>
                 <button

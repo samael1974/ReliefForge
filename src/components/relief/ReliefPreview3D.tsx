@@ -10,6 +10,9 @@ import type { BaseStyle } from "@/lib/relief/reliefTypes";
 import { buildPassepartoutRectPhi } from "@/lib/relief/frame/buildPassepartoutRectPhi";
 import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
 import { computeAssemblyLayout, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
+
+/** Segnaposto per la mesh del rilievo nei progetti di sola cornice: non disegna nulla. */
+const EMPTY_GEOMETRY = new THREE.BufferGeometry();
 import { resampleHeightmapFiltered } from "@/lib/relief/heightmapMesh";
 import { makeMatcapTexture } from "@/lib/relief/render/makeMatcap";
 
@@ -51,6 +54,8 @@ type MatUI = {
 type Props = {
   hmState: HeightmapState | null;
   stlWidthMm: number;
+  /** Altezza dell'apertura in mm quando non c'e' rilievo (progetto di sola cornice). */
+  openingHeightMm?: number;
   decimateStep: number;
   maxPreviewCells?: number;
   depthMm: number;
@@ -122,6 +127,7 @@ function toBufferGeometry(vertices: Float32Array, indices: Uint32Array): THREE.B
 function ReliefPreview3DScene({
   hmState,
   stlWidthMm,
+  openingHeightMm,
   decimateStep,
   maxPreviewCells = 300_000,
   depthMm,
@@ -189,12 +195,14 @@ function ReliefPreview3DScene({
   }, [solidGeometry]);
 
   const reliefPlan = useMemo(() => {
-    if (!hmState) return { w: Math.max(1, stlWidthMm), h: Math.max(1, stlWidthMm) };
+    // Senza rilievo l'impronta la detta l'apertura dichiarata: e' il progetto di
+    // sola cornice. Il quadrato resta solo come ultimo ripiego.
+    if (!hmState) return { w: Math.max(1, stlWidthMm), h: Math.max(1, openingHeightMm ?? stlWidthMm) };
     const w = Math.max(1, stlWidthMm);
     // Stessa formula di buildSolidFromHeightmap (segmenti, non pixel).
     const h = w * ((hmState.h - 1) / (hmState.w - 1));
     return { w, h };
-  }, [hmState, stlWidthMm]);
+  }, [hmState, stlWidthMm, openingHeightMm]);
 
   /** Spessore Z reale del solido rilievo, letto dalla geometria costruita. */
   const reliefThicknessMm = useMemo(() => {
@@ -242,7 +250,6 @@ function ReliefPreview3DScene({
   useEffect(() => () => { matcap?.dispose(); }, [matcap]);
 
   const matGeometry = useMemo(() => {
-    if (!hmState) return null;
     if (!mat?.enabled) return null;
     if (layout.matInnerW === null || layout.matInnerH === null) return null;
     const out = buildPassepartoutRectPhi({
@@ -263,7 +270,6 @@ function ReliefPreview3DScene({
   // Cornice a vassoio (L-profile): apertura fronte stretta, vassoio retro più largo.
   // La battuta è il gradino strutturale tra le due aperture — non più una mesh separata.
   const frameGeometry = useMemo(() => {
-    if (!hmState) return null;
     if (!frame?.enabled) return null;
     const out = buildFrameRectPocket({
       innerWmm: layout.framePocketW,
@@ -284,7 +290,7 @@ function ReliefPreview3DScene({
   // interno della cornice. Prima il parametro arrivava alla preview ma non
   // veniva mai trasformato in geometria.
   const ledValanceGeometry = useMemo(() => {
-    if (!hmState || !frame?.enabled || !ledValance?.enabled) return null;
+    if (!frame?.enabled || !ledValance?.enabled) return null;
     if (ledValance.widthMm <= 0 || ledValance.depthMm <= 0) return null;
 
     const frameInnerW = layout.framePocketW;
@@ -319,14 +325,17 @@ function ReliefPreview3DScene({
     };
   }, [solidGeometry, matGeometry, frameGeometry, ledValanceGeometry]);
 
-  if (!hmState) {
+  // Un progetto puo' contenere solo la cornice: in quel caso non c'e' heightmap e
+  // non c'e' solidGeometry, ma c'e' comunque qualcosa da mostrare.
+  const hasFrameOrMat = !!frame?.enabled || !!mat?.enabled;
+  if (!hmState && !hasFrameOrMat) {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">
-        Carica un file per vedere il 3D.
+        Carica un file, oppure attiva la cornice per un progetto di sola cornice.
       </div>
     );
   }
-  if (!solidGeometry) {
+  if (!solidGeometry && !hasFrameOrMat) {
     return (
       <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">
         La preview 3D appare dopo la generazione della heightmap.
@@ -447,7 +456,7 @@ function ReliefPreview3DScene({
 
   
   <mesh
-  geometry={solidGeometry}
+  geometry={solidGeometry ?? EMPTY_GEOMETRY}
   position={[0, 1, reliefZmm]}   // ✅ incrocio assi griglia + offset profondità
   rotation={PREVIEW_MIRROR_Y_180 ? [0, Math.PI, 0] : [0, 0, 0]}
   castShadow
@@ -536,7 +545,7 @@ function ReliefPreview3DScene({
         </group>
 
         <ContactShadows
-          key={`${solidGeometry.uuid}-${frameGeometry?.uuid ?? "no-frame"}`}
+          key={`${solidGeometry?.uuid ?? "no-relief"}-${frameGeometry?.uuid ?? "no-frame"}`}
           position={[0, groundY, 0]}
           scale={Math.max(260, stlWidthMm * 2.4)}
           opacity={0.38}
