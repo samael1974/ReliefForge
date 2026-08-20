@@ -19,6 +19,7 @@ if (-not $SoloApp) {
         "Assieme cornice"            = { pnpm assembly:check }
         "Mesh adattiva"              = { pnpm adaptive:check }
         "Curva tonale"               = { pnpm curve:check }
+        "Invarianza STL"             = { pnpm stl:check }
     }
     $i = 0
     foreach ($k in $passi.Keys) {

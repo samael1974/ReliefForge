@@ -30,6 +30,10 @@ jobs:
         run: pnpm assembly:check
       - name: Mesh adattiva (watertight, errore reale, ingombro)
         run: pnpm adaptive:check
+      - name: Curva tonale (identita', monotonia, intervallo)
+        run: pnpm curve:check
+      - name: Invarianza STL (gli STL del rilievo non devono cambiare da soli)
+        run: pnpm stl:check
 
   windows:
     needs: checks

@@ -138,6 +138,9 @@ export default function ReliefWizard() {
 
   // ✅ Toggle invert (vale per entrambe le modalità)
   const [invertDepthMap, setInvertDepthMap] = React.useState(false);
+  // Una depth map importata e' gia' stata elaborata a monte: di default non la si
+  // ri-normalizza. Fino alla 8.8 lo si faceva sempre, cancellando quel lavoro.
+  const [normalizeDepthMap, setNormalizeDepthMap] = React.useState(false);
 
   // ✅ Upload
   const [file, setFile] = React.useState<File | null>(null);
@@ -315,7 +318,7 @@ export default function ReliefWizard() {
 
           // ✅ Dettaglio / Smussatura / Edge regolabili anche sulla depth map caricata.
           //    normalize:true usa tutto il range di profondità -> rilievo più evidente.
-          const adj = postProcessHeightmapF32(raw!.normF32, raw!.w, raw!.h, params, { normalize: true });
+          const adj = postProcessHeightmapF32(raw!.normF32, raw!.w, raw!.h, params, { normalize: normalizeDepthMap });
           const hm: HeightmapState = { normF32: adj, w: raw!.w, h: raw!.h };
 
           // ✅ Invert applicato qui
@@ -398,6 +401,7 @@ export default function ReliefWizard() {
     file,
     sourceMode,
     invertDepthMap,
+    normalizeDepthMap,
     params.projectType,
     params.depthMm,
     params.baseMm,
@@ -607,6 +611,16 @@ export default function ReliefWizard() {
               />
               <span>Inverti profondità</span>
               <span className="text-xs text-gray-500">(se viene “al contrario”)</span>
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={normalizeDepthMap}
+                onChange={(e) => setNormalizeDepthMap(e.target.checked)}
+              />
+              <span>Normalizza il range</span>
+              <span className="text-xs text-gray-500">(rilievo più marcato, altera la depth map originale)</span>
             </label>
           </div>
 

@@ -467,7 +467,12 @@ export async function downloadReliefAssemblyStl(args: AssemblyArgs): Promise<{ t
   return { triangles: new DataView(bin).getUint32(80, true) };
 }
 
-export function downloadReliefStlBinary(args: DownloadArgs): { triangles: number } {
+/**
+ * Costruisce lo STL binario del solo rilievo e lo restituisce in memoria.
+ * Puro: nessun accesso al DOM, quindi eseguibile in Node (vedi scripts/stl-check.mts).
+ * Lancia se la mesh non e' chiusa o contiene vertici non finiti.
+ */
+export function buildReliefStlBinary(args: DownloadArgs): ArrayBuffer {
   const {
     hm,
     widthMm,
@@ -475,7 +480,6 @@ export function downloadReliefStlBinary(args: DownloadArgs): { triangles: number
     baseMm,
     outputMode: _outputMode, // tenuto per compatibilità; non usato ora
     baseStyle,
-    fileName,
   } = args;
 
   if (!hm) throw new Error("STL: missing heightmap (hm)");
@@ -518,7 +522,12 @@ geom.computeVertexNormals();
     throw new Error(`Mesh non chiusa: openEdges=${check.openEdges}`);
   }
 
-  const bin = geometryToBinaryStl(geom);
-  downloadArrayBuffer(bin, fileName ?? "reliefforge");
+  return geometryToBinaryStl(geom);
+}
+
+/** Costruisce lo STL del solo rilievo e lo scarica. Wrapper sul builder puro. */
+export function downloadReliefStlBinary(args: DownloadArgs): { triangles: number } {
+  const bin = buildReliefStlBinary(args);
+  downloadArrayBuffer(bin, args.fileName ?? "reliefforge");
   return { triangles: new DataView(bin).getUint32(80, true) };
 }
