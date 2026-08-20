@@ -308,6 +308,16 @@ export default function Studio() {
   const [keyLightDeg, setKeyLightDeg] = useState(35);
   const [layout, setLayout] = useState<AssemblyLayout | null>(null);
 
+  // Inspector ridimensionabile: 250 px fissi erano sotto il minimo utile e
+  // costringevano a scorrere di continuo.
+  const INSPECTOR_MIN = 280, INSPECTOR_MAX = 460;
+  const [inspectorW, setInspectorW] = useState(() => {
+    const v = Number(localStorage.getItem("rf.inspectorWidth"));
+    return Number.isFinite(v) && v >= INSPECTOR_MIN && v <= INSPECTOR_MAX ? v : 340;
+  });
+  useEffect(() => { localStorage.setItem("rf.inspectorWidth", String(Math.round(inspectorW))); }, [inspectorW]);
+  const dragRef = useRef<{ x: number; w: number } | null>(null);
+
   const C = visualPreferences.theme === "dark" ? DARK_C : LIGHT_C;
   const previewColors = useMemo(() => ({
     relief: visualPreferences.reliefColor,
@@ -605,6 +615,12 @@ export default function Studio() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key >= "1" && event.key <= "5") {
+        const ids: Step[] = ["image", "depth", "relief", "frame", "export"];
+        event.preventDefault();
+        setStep(ids[Number(event.key) - 1]!);
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         saveProject();
@@ -932,22 +948,6 @@ export default function Studio() {
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
 
-        <div style={{ width: 70, background: C.panel, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 10, gap: 4 }}>
-          {steps.map(({ id, label, Icon }) => {
-            const on = step === id;
-            return (
-              <button key={id} onClick={() => setStep(id)} style={{
-                width: 60, padding: "8px 0", borderRadius: 8, border: "none", cursor: "pointer",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                background: on ? C.border : "transparent", color: on ? "#fff" : C.muted,
-                boxShadow: on ? `inset 2px 0 0 ${C.accent}` : "none",
-              }}>
-                <Icon size={20} /><span style={{ fontSize: 10, fontWeight: on ? 600 : 400 }}>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-
         <div style={{ flex: 1, position: "relative", minWidth: 0, background: C.viewport }}>
           {hmState && (
             <button onClick={() => setWire((w) => !w)} style={{ position: "absolute", top: 12, left: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 6, background: wire ? C.accent : "#0e1116cc", color: wire ? C.accentInk : C.text, border: `1px solid ${C.border2}`, borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
@@ -1013,7 +1013,35 @@ export default function Studio() {
           )}
         </div>
 
-        <div style={{ width: 250, background: C.panel, borderLeft: `1px solid ${C.border}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div
+          onPointerDown={(e) => { dragRef.current = { x: e.clientX, w: inspectorW }; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
+          onPointerMove={(e) => {
+            const d = dragRef.current; if (!d) return;
+            setInspectorW(Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, d.w - (e.clientX - d.x))));
+          }}
+          onPointerUp={(e) => { dragRef.current = null; try { (e.target as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* gia' rilasciato */ } }}
+          title="Trascina per allargare o stringere il pannello"
+          style={{ width: 6, cursor: "col-resize", background: C.border, flexShrink: 0 }}
+        />
+
+        <div style={{ width: inspectorW, background: C.panel, borderLeft: `1px solid ${C.border}`, display: "flex", flexDirection: "column", minHeight: 0, flexShrink: 0 }}>
+          {/* Le fasi in cima al pannello: prima erano a sinistra e i loro parametri a
+              destra, quindi ogni cambio di fase costava un viaggio attraverso lo schermo. */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, background: C.bar, flexShrink: 0 }}>
+            {steps.map(({ id, label, Icon }) => {
+              const on = step === id;
+              return (
+                <button key={id} onClick={() => setStep(id)} title={`${label}  (Ctrl+${steps.findIndex((x) => x.id === id) + 1})`} style={{
+                  flex: 1, padding: "7px 2px", border: "none", cursor: "pointer",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  background: on ? C.panel : "transparent", color: on ? "#fff" : C.muted,
+                  boxShadow: on ? `inset 0 -2px 0 ${C.accent}` : "none",
+                }}>
+                  <Icon size={16} /><span style={{ fontSize: 9.5, fontWeight: on ? 600 : 400 }}>{label}</span>
+                </button>
+              );
+            })}
+          </div>
           <div style={{ flex: 1, padding: "14px 15px", overflowY: "auto", minHeight: 0 }}>
             {step === "image" && (
               <>
@@ -1021,10 +1049,8 @@ export default function Studio() {
                 <button onClick={() => fileRef.current?.click()} style={{ ...primaryBtn, width: "100%", justifyContent: "center", marginBottom: 14 }}>
                   <ImageIcon size={15} /> Apri immagine
                 </button>
-                <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Qualità modello</div>
-                <div style={{ marginBottom: 12 }}>{QualityPills}</div>
                 <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
-                  Veloce/Alta/Massima = modello AI (più alto = più dettagliato, più pesante da scaricare). I dettagli del rilievo si regolano poi in <b style={{ color: C.muted }}>Profondità</b>.
+                  La qualità del modello AI si sceglie <b style={{ color: C.muted }}>in alto a destra</b> (Veloce / Alta / Massima): più alta = più dettagliata e più pesante da scaricare. I dettagli del rilievo si regolano poi in <b style={{ color: C.muted }}>Profondità</b>.
                 </div>
                 <div style={{ marginTop: 12, padding: 9, border: `1px solid ${C.border}`, borderRadius: 7, color: C.muted, fontSize: 11, lineHeight: 1.5 }}>
                   <b style={{ color: C.text }}>Risoluzione stabile: 1024 px</b><br />La modalità 1600 px è stata rimossa: il dettaglio viene preservato dal filtro V8.3 senza sovraccaricare Electron.
