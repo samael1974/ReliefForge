@@ -946,7 +946,7 @@ export default function Studio() {
               <FrameIcon size={14} /> {previewWelded ? "Anteprima: fuso" : "Anteprima: separati"}
             </button>
           )}
-          {hmState ? (
+          {(hmState || frameOn || matOn) ? (
             <ReliefPreview3D hmState={hmState} openingHeightMm={openingHmm} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
               depthMm={depthMm} baseMm={baseMm} baseStyle={"flat" as any} outputMode={"relief"} bgColor={C.viewport}
@@ -967,8 +967,11 @@ export default function Studio() {
           ) : (
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.hint, gap: 14 }}>
               <BoxIcon size={48} strokeWidth={1} />
-              <div style={{ fontSize: 13 }}>Nessun rilievo. Apri un'immagine.</div>
-              <button onClick={() => fileRef.current?.click()} style={primaryBtn}><ImageIcon size={15} /> Apri immagine</button>
+              <div style={{ fontSize: 13 }}>Progetto vuoto.</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => fileRef.current?.click()} style={primaryBtn}><ImageIcon size={15} /> Apri immagine</button>
+                <button onClick={() => { setFrameOn(true); setStep("frame"); }} style={ghostBtn}><FrameIcon size={15} /> Solo cornice</button>
+              </div>
             </div>
           )}
           {busy && (
