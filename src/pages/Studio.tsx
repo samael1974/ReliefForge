@@ -1104,9 +1104,6 @@ export default function Studio() {
                 <Slider strong label="Profondità" value={depthMm} min={0.5} max={20} step={0.5} suffix=" mm" onChange={setDepthMm} />
                 <Slider label="Base" value={baseMm} min={0} max={8} step={0.5} suffix=" mm" onChange={setBaseMm} />
                 <Slider label="Larghezza" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                {!hmState && (
-                  <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
-                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted, margin: "-4px 0 12px" }}>
                   <span>Altezza (auto)</span>
                   <span style={{ color: C.text }}>{hmState ? Math.round(widthMm * hmState.h / hmState.w) : "—"} mm</span>
@@ -1143,6 +1140,31 @@ export default function Studio() {
             {step === "frame" && (
               <>
                 <PanelTitle Icon={FrameIcon} text="Cornice & passepartout" />
+
+                <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 10px", marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 7 }}>APERTURA</div>
+                  {hmState ? (
+                    <>
+                      <div style={{ ...fieldLabel, marginBottom: 8 }}>
+                        <span>Larghezza</span><span style={{ color: C.text }}>{Math.round(widthMm)} mm</span>
+                      </div>
+                      <div style={{ ...fieldLabel, marginBottom: 8 }}>
+                        <span>Altezza</span><span style={{ color: C.text }}>{Math.round(widthMm * hmState.h / hmState.w)} mm</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        🔒 Adattata all'immagine: l'altezza segue le proporzioni del rilievo. La larghezza si cambia in <b style={{ color: C.muted }}>Rilievo</b>.
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        Progetto di sola cornice. Se apri un'immagine o una depth map, l'apertura si adatta da sola alle sue proporzioni.
+                      </div>
+                    </>
+                  )}
+                </div>
 
                 {layout && (frameOn || matOn) && (
                   <div style={{ background: "#0e1116", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 11, lineHeight: 1.7 }}>
