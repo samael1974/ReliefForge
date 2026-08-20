@@ -114,7 +114,7 @@ check(Math.abs(tdx - tdy) < 0.5, `sezione circolare (scarto X-Y ${Math.abs(tdx -
 // Il bordo reale non e' solo solidMm: fra apertura e bordo ci sono anche la
 // battuta (lipMm) e il gioco per il rilievo (reliefGapMm). Misurato sul caso
 // rettangolare qui sopra: 146.60 - 130 = 16.60 = 2 x (5 + 3.0 + 0.3).
-const BORDO_REALE = BORDO + 3.0 + 0.3;
+const BORDO_REALE = BORDO + 0.3;
 const attesoEsterno = DIAMETRO + 2 * BORDO_REALE;
 check(Math.abs(tdx - attesoEsterno) < 1, `diametro esterno = apertura + 2 x (bordo + battuta + gioco) (${tdx.toFixed(2)} vs ${attesoEsterno.toFixed(2)})`);
 
@@ -151,14 +151,14 @@ function apertureLevels(g: any, esternoMax: number): number[] {
   return [...set].sort((a, b) => a - b);
 }
 
-async function cornice(seat: number, seatD: number, loadFrom: "front" | "back" = "front") {
+async function cornice(seat: number, seatD: number, loadFrom: "front" | "back" = "front", lip = 3.0) {
   const r = await buildReliefAssemblyGeometry({
     hm: aperturaPiatta(APERTURA_W, APERTURA_H),
     widthMm: APERTURA_W, depthMm: 4, baseMm: 3,
     outputMode: "relief", baseStyle: "flat", frameOnly: true,
     frame: {
       solidMm: BORDO, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
-      lipMm: 3.0, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.3,
+      lipMm: lip, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.3,
       glassSeatMm: seat, glassSeatDepthMm: seatD, reliefLoadFrom: loadFrom,
     },
     mat: null,
@@ -171,7 +171,8 @@ DOPPIA BATTUTA — labbro ${SEAT} mm largo, ${SEAT_D} mm spesso
 `);
 
 // Il muro esterno sta a (apertura + 2*(bordo+battuta+gioco))/2: si esclude.
-const ESTERNO = (APERTURA_W + 2 * (BORDO + 3.0 + 0.3)) / 2 - 0.5;
+// L'esterno ora e' rilievo + gioco + bordo, senza la sporgenza: era quella a gonfiarlo.
+const ESTERNO = (APERTURA_W + 2 * 0.3 + 2 * BORDO) / 2 - 0.5;
 const senza = apertureLevels(await cornice(0, 0), ESTERNO);
 const con = apertureLevels(await cornice(SEAT, SEAT_D), ESTERNO);
 console.log(`  aperture senza sede vetro: ${senza.join(", ")} mm`);
@@ -223,12 +224,12 @@ console.log("");
 console.log("ANTEPRIMA vs EXPORT — stessa cornice, due costruttori");
 console.log("");
 
-const BACK_INNER = APERTURA_W + 2 * (3.0 + 0.3); // apertura + battuta + gioco per lato
+const BACK_INNER = APERTURA_W + 2 * 0.3; // rilievo + gioco per lato
 
 function livelliTassellati(seat: number, seatD: number): number[] {
   const out = buildFrameRectPocket({
     innerWmm: BACK_INNER,
-    innerHmm: APERTURA_H + 2 * (3.0 + 0.3),
+    innerHmm: APERTURA_H + 2 * 0.3,
     thicknessMm: BORDO,
     heightMm: 21,
     pocketDepthMm: 3.6,
@@ -283,7 +284,7 @@ const cy = (tbb.max.y + tbb.min.y) / 2;
 
 const raggi = new Set<number>();
 let facceEsterne = 0;
-const rEsterno = (DIAMETRO + 2 * (BORDO + 3.0 + 0.3)) / 2;
+const rEsterno = (DIAMETRO + 2 * 0.3 + 2 * BORDO) / 2;
 for (let i = 0; i < tp.count; i++) {
   const r = Math.hypot(tp.getX(i) - cx, tp.getY(i) - cy);
   raggi.add(Math.round(r * 10) / 10);
@@ -294,7 +295,7 @@ const triTonda = tondaSeat.geometry.index ? tondaSeat.geometry.index.count / 3 :
 console.log(`  raggi presenti: ${listaRaggi.join(", ")} mm`);
 console.log(`  triangoli: ${triTonda}`);
 
-const rVassoio = (DIAMETRO + 2 * (3.0 + 0.3)) / 2;
+const rVassoio = (DIAMETRO + 2 * 0.3) / 2;
 const rSedeVetro = rVassoio + SEAT; // scasso frontale, piu' largo della cavita'
 const rApertura = rVassoio - 3.0;
 
@@ -348,6 +349,36 @@ console.log("");
 console.log("");
 const raggiInterni = listaRaggi.filter((v) => v < rEsterno - 0.5); // via il muro esterno
 check(raggiInterni.length === con.length, `tonda e rettangolare hanno gli stessi gradini (${raggiInterni.length} vs ${con.length})`);
+
+// ---------------------------------------------------------------------------
+// La SPORGENZA del bordino deve chiudere l'apertura verso l'interno, NON gonfiare
+// la cornice. Fino alla 8.17 il vassoio era ricavato come apertura + 2*sporgenza,
+// quindi alzare la sporgenza faceva crescere anche l'ingombro esterno.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("SPORGENZA DEL BORDINO");
+console.log("");
+{
+  const misura = async (lip: number) => {
+    const g = await cornice(0, 0, "front", lip);
+    g.computeBoundingBox();
+    const bb = g.boundingBox!;
+    const pos = g.getAttribute("position");
+    let zMin = Infinity;
+    for (let i = 0; i < pos.count; i++) zMin = Math.min(zMin, pos.getZ(i));
+    let ap = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getZ(i) - zMin) < 0.05) ap = Math.min(ap, Math.abs(pos.getX(i)));
+    }
+    return { esterno: Math.round((bb.max.x - bb.min.x) * 10) / 10, bordino: Math.round(ap * 10) / 10 };
+  };
+  const a = await misura(2);
+  const b = await misura(8);
+  console.log(`  sporgenza 2 mm -> esterno ${a.esterno} mm, apertura del bordino r=${a.bordino} mm`);
+  console.log(`  sporgenza 8 mm -> esterno ${b.esterno} mm, apertura del bordino r=${b.bordino} mm`);
+  check(Math.abs(a.esterno - b.esterno) < 0.15, `l'ingombro esterno NON cambia con la sporgenza (${a.esterno} vs ${b.esterno} mm)`);
+  check(b.bordino < a.bordino - 5, `la sporgenza chiude l'apertura verso l'interno (${a.bordino} -> ${b.bordino} mm)`);
+}
 
 console.log(fail ? `\n❌ ${fail} controllo/i fallito/i.` : "\n✅ tutti i controlli superati");
 // Niente process.exit(): il WASM di manifold ha ancora handle aperti e libuv

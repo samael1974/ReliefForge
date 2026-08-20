@@ -155,7 +155,9 @@ function clamp(v: number, lo: number, hi: number) {
 
 /** La battuta e' un elemento funzionale della cornice: si limita ai valori non negativi. */
 export function effectiveFrameLipMm(lipMm: number): number {
-  return Math.max(0, lipMm);
+  // La sporgenza puo' essere NEGATIVA: il bordino si ritira e l'apertura si apre
+  // piu' della cavita', cosi' il rilievo puo' sporgere invece di essere coperto.
+  return lipMm;
 }
 
 export function computeAssemblyLayout(input: AssemblyLayoutInput): AssemblyLayout {
@@ -242,11 +244,18 @@ export function computeAssemblyLayout(input: AssemblyLayoutInput): AssemblyLayou
   // contenuto e l'apertura piccola veniva fuori contenuto − 2·battuta. Con battuta 3 mm
   // la cornice entrava di 3,7 mm per lato DENTRO il rilievo. Non era la battuta che
   // "copre qualche mm di quadro": era compenetrazione vera.
-  const frameApertureW = frame ? Math.max(1, contentW + 2 * gap - 2 * bite) : 0;
-  const frameApertureH = frame ? Math.max(1, contentH + 2 * gap - 2 * bite) : 0;
+  // La CAVITA' e' quella che deve contenere il rilievo: dipende dal rilievo e dal
+  // gioco, non dalla sporgenza del bordino. E' l'apertura del BORDINO a chiudersi
+  // verso l'interno quando la sporgenza cresce.
+  //
+  // Prima era il contrario (pocket = apertura + 2*sporgenza) e alzare la sporgenza
+  // gonfiava tutta la cornice invece di chiudere l'appoggio.
+  const framePocketW = frame ? Math.max(1, contentW + 2 * gap - 2 * bite) : 0;
+  const framePocketH = frame ? Math.max(1, contentH + 2 * gap - 2 * bite) : 0;
 
-  const framePocketW = frame ? (hasPocket ? frameApertureW + 2 * effectiveLipMm : frameApertureW) : 0;
-  const framePocketH = frame ? (hasPocket ? frameApertureH + 2 * effectiveLipMm : frameApertureH) : 0;
+  // Apertura del bordino: si chiude verso l'interno al crescere della sporgenza.
+  const frameApertureW = frame ? Math.max(1, framePocketW - 2 * effectiveLipMm) : 0;
+  const frameApertureH = frame ? Math.max(1, framePocketH - 2 * effectiveLipMm) : 0;
 
   const frameOuterW = frame ? framePocketW + 2 * frame.solidMm : 0;
   const frameOuterH = frame ? framePocketH + 2 * frame.solidMm : 0;

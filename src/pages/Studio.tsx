@@ -1309,7 +1309,7 @@ export default function Studio() {
                             }}>{label}</button>
                           ))}
                         </div>
-                        <Slider label="Sporgenza bordino" value={frameP.lipMm} min={1} max={20} step={0.1} suffix=" mm" onChange={(v) => setFP("lipMm", v)} />
+                        <Slider label="Sporgenza bordino" value={frameP.lipMm} min={-10} max={20} step={0.1} suffix=" mm" onChange={(v) => setFP("lipMm", v)} />
                         <Slider label="Spessore bordino" value={frameP.lipThickMm} min={0.4} max={10} step={0.1} suffix=" mm" onChange={(v) => setFP("lipThickMm", v)} />
                         <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 2 }}>
                           Cornicetta <b>fusa</b> alla cornice, messa dal lato <b>opposto</b> a quello di inserimento. Il bassorilievo si cala {frameP.reliefLoadFrom === "back" ? "dal retro" : "dal fronte"} e ci appoggia contro: lì lo incolli. L'apertura è larga quanto il rilievo più {frameP.reliefGapMm} mm per lato.

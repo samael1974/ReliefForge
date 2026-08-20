@@ -176,10 +176,13 @@ for (const c of cases) {
   }
   for (const w of layout.warnings) console.log(`  ⚠ ${w}`);
 
-  // La cornice puo' sovrapporsi al rilievo AL MASSIMO del morso di saldatura:
-  // oltre, sta entrando nel bassorilievo (difetto segnalato sulla 8.5.0).
-  if (layout.reliefCoverPerSideMm > WELD_BITE + 1e-6) {
-    console.log(`  ✗ la battuta entra nel rilievo di ${layout.reliefCoverPerSideMm.toFixed(2)} mm/lato (max ${WELD_BITE})`);
+  // Dalla 8.18 il BORDINO copre il rilievo apposta: e' l'appoggio su cui il
+  // bassorilievo si posa e si incolla, quindi la sovrapposizione dichiarata e' la
+  // sporgenza. Resta pero' un difetto se la cornice entra OLTRE quella sporgenza
+  // (piu' il morso di saldatura): li' starebbe mangiando il bassorilievo.
+  const coperturaAmmessa = Math.max(0, layout.effectiveLipMm) + WELD_BITE;
+  if (layout.reliefCoverPerSideMm > coperturaAmmessa + 1e-6) {
+    console.log(`  ✗ la cornice entra nel rilievo di ${layout.reliefCoverPerSideMm.toFixed(2)} mm/lato, oltre la sporgenza dichiarata (max ${coperturaAmmessa.toFixed(2)})`);
     failures++;
   } else {
     console.log(`  ✓ sovrapposizione cornice ${layout.reliefCoverPerSideMm.toFixed(2)} mm/lato (solo saldatura)`);
