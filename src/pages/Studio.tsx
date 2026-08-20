@@ -370,7 +370,7 @@ export default function Studio() {
   const [frameOn, setFrameOn] = useState(false);
   const [matOn, setMatOn] = useState(false);
   const [glassOn, setGlassOn] = useState(false);
-  const [frameP, setFrameP] = useState({ solidMm: 5, frameHeightMm: 21, glassMm: 2 as 2 | 3, glassClearanceMm: 0.25, pocketDepthMm: 3.6, lipMm: 3.0, pocketRadialMm: 3.0, cornerRadiusMm: 0, reliefGapMm: 0.3 });
+  const [frameP, setFrameP] = useState({ solidMm: 5, frameHeightMm: 21, glassMm: 2 as 2 | 3, glassClearanceMm: 0.25, pocketDepthMm: 3.6, lipMm: 3.0, pocketRadialMm: 3.0, cornerRadiusMm: 0, reliefGapMm: 0.3, glassSeatMm: 0, glassSeatDepthMm: 1.2 });
   const [matP, setMatP] = useState({ steps: 1 as 1 | 2 | 3 | 4 | 5 | 6, totalBandsMm: 10, minBandMm: 6, thicknessMm: 2, stepDropMm: 2, matDropMm: 2.5, reliefGapMm: 0.35 });
   const [glassP, setGlassP] = useState({ lipWmm: 3, lipThkmm: 3 });
   const [rimOn, setRimOn] = useState(false);  // veletta LED positiva sul fronte
@@ -705,7 +705,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: frameP.glassSeatDepthMm } : null,
       } as any);
       setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
@@ -733,7 +733,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: frameP.glassSeatDepthMm } : null,
       } as any);
       setStatus("STL solo cornice esportato (stampa separata).");
     } catch (e: any) { setStatus("Errore export cornice: " + (e?.message ?? String(e))); }
@@ -1265,6 +1265,23 @@ export default function Studio() {
                           </div>
                         ) : (
                           <Slider label="Arrotonda bordi" value={frameP.cornerRadiusMm} min={0} max={12} step={0.5} suffix=" mm" onChange={(v) => setFP("cornerRadiusMm", v)} />
+                        )}
+
+                        <div style={{ height: 1, background: C.border, margin: "12px 0" }} />
+                        <Toggle label="Sede vetro frontale" on={frameP.glassSeatMm > 0} onChange={(on) => setFP("glassSeatMm", on ? 2 : 0)} />
+                        {frameP.glassSeatMm > 0 && (
+                          <>
+                            <Slider label="Larghezza labbro" value={frameP.glassSeatMm} min={0.5} max={8} step={0.5} suffix=" mm" onChange={(v) => setFP("glassSeatMm", v)} />
+                            <Slider label="Spessore labbro" value={frameP.glassSeatDepthMm} min={0.4} max={6} step={0.2} suffix=" mm" onChange={(v) => setFP("glassSeatDepthMm", v)} />
+                            <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                              Secondo gradino davanti al vassoio: il vetro entra da dietro e il labbro lo trattiene, invece di doverlo incollare sul fronte del rilievo. Sede utile per il vetro: {(frameP.glassMm + frameP.glassClearanceMm).toFixed(2)} mm (spessore + gioco).
+                            </div>
+                            {frameP.glassSeatDepthMm >= frameP.pocketDepthMm - 0.05 && (
+                              <div style={{ marginTop: 7, padding: 8, border: "1px solid #7a5a34", background: "#2a2012", borderRadius: 7, color: "#e2b25c", fontSize: 11, lineHeight: 1.6 }}>
+                                ⚠ Il labbro ({frameP.glassSeatDepthMm} mm) è più profondo del vassoio ({frameP.pocketDepthMm} mm): la sede vetro viene ignorata. Aumenta la profondità del vassoio o riduci lo spessore del labbro.
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     )}

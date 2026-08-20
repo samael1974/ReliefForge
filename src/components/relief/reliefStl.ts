@@ -244,6 +244,10 @@ export type FrameCfg = {
   pocketDepthMm: number;
   /** Raggio arrotondamento spigoli verticali (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
+  /** Battuta vetro frontale: larghezza radiale del labbro. 0 = assente. */
+  glassSeatMm?: number;
+  /** Spessore del labbro che trattiene il vetro. */
+  glassSeatDepthMm?: number;
   /** Gioco per lato tra rilievo e apertura cornice (mm) — usato SOLO nell'export "solo cornice" */
   reliefGapMm?: number;
 };
@@ -391,7 +395,22 @@ export async function buildReliefAssemblyGeometry(
       const frontHole = roundedBox(wasm, frontInnerW, frontInnerH, frH + 2, rFront, segs);
       let frameM = outer.subtract(frontHole);
 
-      if (hasPocket) {
+      const seat = Math.max(0, frame.glassSeatMm ?? 0);
+      const seatD = Math.max(0, frame.glassSeatDepthMm ?? 0);
+      const hasSeat = hasPocket && seat > 0.01 && seatD > 0.01 && seatD < pocketDepth - 0.05;
+
+      if (hasSeat) {
+        // Doppia battuta. La cavita' e' una scaletta: foro ridotto del labbro davanti,
+        // vassoio pieno dietro. Si costruisce come UNIONE e si sottrae una volta sola:
+        // sottrarre due solidi con facce complanari e' piu' fragile.
+        const rSeat = Math.max(0, R - frame.solidMm - seat);
+        const seatHole = roundedBox(wasm, Math.max(1, backInnerW - 2 * seat), Math.max(1, backInnerH - 2 * seat), seatD + 1.0, rSeat, segs)
+          .translate([0, 0, frH / 2 - seatD / 2 + 0.5]);
+        const trayDepth = Math.max(0.05, pocketDepth - seatD);
+        const tray = roundedBox(wasm, backInnerW, backInnerH, trayDepth, rBack, segs)
+          .translate([0, 0, frH / 2 - seatD - trayDepth / 2]);
+        frameM = frameM.subtract(seatHole.add(tray));
+      } else if (hasPocket) {
         // Vassoio scavato dal FRONTE (lato in vista), così il vetro si appoggia/incolla
         // sul davanti del rilievo. Asse Z (locale): cornice centrata in z=0 → z ∈ [-frH/2, +frH/2].
         // +z locale = fronte visibile (dopo la traslazione = lato del rilievo/viewer).

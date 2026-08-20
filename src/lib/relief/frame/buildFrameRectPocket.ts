@@ -30,6 +30,11 @@ export type FrameRectPocketParams = {
   pocketDepthMm: number;
   /** Battuta (gradino radiale per lato) tra apertura fronte e retro. 0 = niente battuta */
   lipMm: number;
+  /** Battuta VETRO frontale: larghezza radiale del labbro che trattiene il vetro.
+   *  0 = niente sede vetro (comportamento storico: un gradino solo). */
+  glassSeatMm?: number;
+  /** Spessore lungo Y del labbro che trattiene il vetro (materiale davanti al vetro). */
+  glassSeatDepthMm?: number;
   /** Raggio di arrotondamento spigoli verticali esterni (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
   /** Segmenti per ciascun angolo a 90° (qualità della curva). Default 6 */
@@ -93,6 +98,14 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const outerH = hBack + 2 * thickness;
 
   const hasPocket = pocketDepth > 0 && lip > 0;
+
+  // Sede vetro: secondo gradino, davanti al vassoio. Il labbro trattiene il vetro
+  // che altrimenti andrebbe solo incollato sul fronte del rilievo.
+  const seat = Math.max(0, p.glassSeatMm ?? 0);
+  const seatD = Math.max(0, p.glassSeatDepthMm ?? 0);
+  const hasSeat = hasPocket && seat > 0.01 && seatD > 0.01 && seatD < pocketDepth - 0.05;
+  const wSeat = Math.max(0.5, wBack - 2 * seat);
+  const hSeat = Math.max(0.5, hBack - 2 * seat);
   // V8.4: default 16 segmenti per angolo (era 6): curve lisce anche in anteprima.
   const segPerCorner = R > 0.01 ? Math.max(1, p.cornerSegments ?? 16) : 0;
 
@@ -104,12 +117,16 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const rOuter = R;
   const rBack = Math.max(0, R - thickness);
   const rFront = Math.max(0, R - thickness - lip);
+  const rSeat = Math.max(0, R - thickness - seat);
 
   // Perimetri (tutti con lo stesso segPerCorner → index-allineati)
   const perOuter = roundedRectPerimeter(outerW / 2, outerH / 2, rOuter, segPerCorner);
   const perBack = roundedRectPerimeter(wBack / 2, hBack / 2, rBack, segPerCorner);
   const perFront = hasPocket
     ? roundedRectPerimeter(wFront / 2, hFront / 2, rFront, segPerCorner)
+    : perBack;
+  const perSeat = hasSeat
+    ? roundedRectPerimeter(wSeat / 2, hSeat / 2, rSeat, segPerCorner)
     : perBack;
   const N = perOuter.length;
 
@@ -153,7 +170,17 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
     }
   };
 
-  if (hasPocket) {
+  if (hasSeat) {
+    // Scaletta a due gradini: labbro vetro -> sede vetro -> vassoio -> battuta rilievo.
+    addRing(perOuter, perSeat, y0, false);         // faccia fronte, ristretta dal labbro vetro
+    addWall(perSeat, y0, seatD, false);            // spessore del labbro vetro
+    addRing(perBack, perSeat, seatD, true);        // gradino: qui batte il VETRO
+    addWall(perBack, seatD, yLip, false);          // parete del vassoio
+    addRing(perBack, perFront, yLip, false);       // battuta: qui appoggia il RILIEVO
+    addWall(perFront, yLip, yH, false);            // apertura visibile piccola
+    addWall(perOuter, y0, yH, true);               // muro esterno
+    addRing(perOuter, perFront, yH, true);         // faccia posteriore
+  } else if (hasPocket) {
     addRing(perOuter, perBack, y0, false);         // faccia fronte (apertura vassoio grande)
     addWall(perBack, y0, yLip, false);             // parete del vassoio
     addRing(perBack, perFront, yLip, false);       // battuta rivolta verso il fronte/vetro

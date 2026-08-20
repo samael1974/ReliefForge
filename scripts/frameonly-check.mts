@@ -10,6 +10,7 @@
 // Uso:  pnpm frameonly:check
 
 import { buildReliefAssemblyGeometry } from "../src/components/relief/reliefStl";
+import { buildFrameRectPocket } from "../src/lib/relief/frame/buildFrameRectPocket";
 
 let fail = 0;
 const check = (ok: boolean, msg: string) => { console.log(`  ${ok ? "✓" : "✗"} ${msg}`); if (!ok) fail++; };
@@ -126,6 +127,109 @@ for (let i = 0; i < gp.count && tfiniti; i++) {
   if (!Number.isFinite(gp.getX(i)) || !Number.isFinite(gp.getY(i)) || !Number.isFinite(gp.getZ(i))) tfiniti = false;
 }
 check(tfiniti, "nessun vertice non finito");
+
+
+// ---------------------------------------------------------------------------
+// DOPPIA BATTUTA: sede vetro davanti al vassoio del rilievo.
+// Si misura sulla geometria vera: per ogni quota Z si prende la meta'-apertura
+// (il vertice piu' vicino all'asse). Con la sede vetro deve comparire un livello
+// in piu', piu' stretto, davanti al vassoio: e' il labbro che trattiene il vetro.
+// ---------------------------------------------------------------------------
+const SEAT = 2.0;      // larghezza radiale del labbro
+const SEAT_D = 1.2;    // spessore del labbro
+
+/** Raggi (meta'-apertura) presenti nella mesh, escluso il muro esterno.
+ *  Prendere il minimo per quota Z non basta: il livello del vassoio resta nascosto
+ *  dietro a quello del labbro, che sulla stessa quota e' piu' vicino all'asse. */
+function apertureLevels(g: any, esternoMax: number): number[] {
+  const pos = g.getAttribute("position");
+  const set = new Set<number>();
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(pos.getX(i));
+    if (ax < esternoMax) set.add(Math.round(ax * 10) / 10);
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
+async function cornice(seat: number, seatD: number) {
+  const r = await buildReliefAssemblyGeometry({
+    hm: aperturaPiatta(APERTURA_W, APERTURA_H),
+    widthMm: APERTURA_W, depthMm: 4, baseMm: 3,
+    outputMode: "relief", baseStyle: "flat", frameOnly: true,
+    frame: {
+      solidMm: BORDO, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
+      lipMm: 3.0, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.3,
+      glassSeatMm: seat, glassSeatDepthMm: seatD,
+    },
+    mat: null,
+  } as any);
+  return r.geometry;
+}
+
+console.log(`
+DOPPIA BATTUTA — labbro ${SEAT} mm largo, ${SEAT_D} mm spesso
+`);
+
+// Il muro esterno sta a (apertura + 2*(bordo+battuta+gioco))/2: si esclude.
+const ESTERNO = (APERTURA_W + 2 * (BORDO + 3.0 + 0.3)) / 2 - 0.5;
+const senza = apertureLevels(await cornice(0, 0), ESTERNO);
+const con = apertureLevels(await cornice(SEAT, SEAT_D), ESTERNO);
+console.log(`  aperture senza sede vetro: ${senza.join(", ")} mm`);
+console.log(`  aperture con  sede vetro: ${con.join(", ")} mm`);
+
+check(con.length > senza.length, `un gradino in piu' con la sede vetro (${senza.length} -> ${con.length} livelli)`);
+
+// Il vassoio del rilievo resta dov'era: la sede vetro non deve spostarlo.
+const vassoio = Math.max(...senza);
+check(con.some((v) => Math.abs(v - vassoio) < 0.15), `il vassoio del rilievo non si e' spostato (${vassoio} mm)`);
+
+// Il labbro deve stringere l'apertura di esattamente SEAT per lato.
+const labbroAtteso = vassoio - SEAT;
+check(con.some((v) => Math.abs(v - labbroAtteso) < 0.15), `labbro a ${labbroAtteso.toFixed(1)} mm dall'asse (stretto di ${SEAT} mm per lato)`);
+
+// Spento deve restare identico a prima: chi stampa gia' non deve vedere differenze.
+check(senza.length === 2, `con la sede spenta la cornice resta a due soli raggi (${senza.join(', ')})`);
+
+
+// ---------------------------------------------------------------------------
+// ANTEPRIMA vs EXPORT
+// La cornice e' costruita DUE volte: tassellata a mano per l'anteprima 3D,
+// in CSG per l'export. Se divergono, te ne accorgi con il pezzo stampato in mano.
+// Qui si confrontano i raggi delle aperture prodotti dalle due implementazioni.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("ANTEPRIMA vs EXPORT — stessa cornice, due costruttori");
+console.log("");
+
+const BACK_INNER = APERTURA_W + 2 * (3.0 + 0.3); // apertura + battuta + gioco per lato
+
+function livelliTassellati(seat: number, seatD: number): number[] {
+  const out = buildFrameRectPocket({
+    innerWmm: BACK_INNER,
+    innerHmm: APERTURA_H + 2 * (3.0 + 0.3),
+    thicknessMm: BORDO,
+    heightMm: 21,
+    pocketDepthMm: 3.6,
+    lipMm: 3.0,
+    cornerRadiusMm: 0,
+    glassSeatMm: seat,
+    glassSeatDepthMm: seatD,
+  });
+  const set = new Set<number>();
+  for (let i = 0; i < out.vertices.length; i += 3) {
+    const ax = Math.abs(out.vertices[i]!);
+    if (ax < ESTERNO) set.add(Math.round(ax * 10) / 10);
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
+const antSenza = livelliTassellati(0, 0);
+const antCon = livelliTassellati(SEAT, SEAT_D);
+console.log(`  anteprima senza sede: ${antSenza.join(", ")} mm   (export: ${senza.join(", ")})`);
+console.log(`  anteprima con  sede: ${antCon.join(", ")} mm   (export: ${con.join(", ")})`);
+
+check(antSenza.join() === senza.join(), "senza sede vetro: anteprima ed export coincidono");
+check(antCon.join() === con.join(), "con sede vetro: anteprima ed export coincidono");
 
 console.log(fail ? `\n❌ ${fail} controllo/i fallito/i.` : "\n✅ tutti i controlli superati");
 // Niente process.exit(): il WASM di manifold ha ancora handle aperti e libuv
