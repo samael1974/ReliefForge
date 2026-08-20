@@ -22,6 +22,7 @@ import { PLYExporter } from "three/examples/jsm/exporters/PLYExporter.js";
 import { fuseDepthDetail } from "@/lib/relief/depth/fuseDepthDetail";
 import { gaussianBlurF32, gammaF32, percentileClipF32 } from "@/lib/relief/transform/tonemap";
 import { encodePng16 } from "@/lib/relief/encodePng16";
+import { decodeDepthmapPng } from "@/lib/relief/decodeDepthmapPng";
 import {
   MESH_PROFILES,
   estimateCompactSolidTriangles,
@@ -33,7 +34,15 @@ import {
 
 type Step = "image" | "depth" | "relief" | "frame" | "export";
 type Quality = "small" | "base" | "large";
-type Raw = { depth: Float32Array; luma: Float32Array; w: number; h: number; device: string };
+type Raw = { depth: Float32Array; luma: Float32Array | null; w: number; h: number; device: string };
+
+/** Diagnostica di una depth map importata: serve a spiegare un rilievo piatto prima che sembri un bug. */
+type DepthImportInfo = {
+  name: string; w: number; h: number; bitDepth: number; lossy: boolean;
+  min: number; max: number; resampledTo: string | null;
+  /** Perche' si e' ripiegato sul canvas a 8 bit invece del decoder 16 bit. */
+  fallback: string | null;
+};
 type PP = {
   detailMicro: number; detailSigma: number; skinDenoise: number; volumeGamma: number;
   localAmount: number; localSigma: number; contrastPct: number; invert: boolean;
@@ -218,7 +227,11 @@ function processHeightmap(raw: Raw, p: PP): Float32Array {
     for (let i = 0; i < n; i++) o[i] = d[i] + p.localAmount * (d[i] - low[i]);
     d = o;
   }
-  let f = fuseDepthDetail(d, raw.luma, w, h, { detailAmount: p.detailMicro, detailSigma: p.detailSigma, renormalize: false });
+  // Senza immagine di colore (depth map importata) non c'e' luma da cui estrarre il
+  // micro-dettaglio: la fusione va saltata, non chiamata a vuoto.
+  let f = raw.luma
+    ? fuseDepthDetail(d, raw.luma, w, h, { detailAmount: p.detailMicro, detailSigma: p.detailSigma, renormalize: false })
+    : d;
   f = gammaF32(f, p.volumeGamma);
   f = percentileClipF32(f, p.contrastPct / 100);
   if (p.invert) { for (let i = 0; i < f.length; i++) f[i] = 1 - f[i]; }
@@ -274,6 +287,11 @@ export default function Studio() {
   const [commercialMessage, setCommercialMessage] = useState<CommercialMessage>(() => loadCommercialMessage());
   const [commercialDraft, setCommercialDraft] = useState<CommercialMessage>(() => loadCommercialMessage());
   const projRef = useRef<HTMLInputElement | null>(null);
+  const depthFileRef = useRef<HTMLInputElement | null>(null);
+  const [depthImport, setDepthImport] = useState<DepthImportInfo | null>(null);
+  const [depthError, setDepthError] = useState<string | null>(null);
+  // Passthrough: una depth map gia' elaborata a monte non va rielaborata di default.
+  const [depthRawMode, setDepthRawMode] = useState(true);
   const [wire, setWire] = useState(false); // modalità wireframe del viewport
   // V8.5: l'anteprima mostra ESATTAMENTE uno dei due export. Fuso = pezzo unico
   // saldato; Separati = cornice e rilievo da stampare a parte, con il gioco vero.
@@ -415,12 +433,13 @@ export default function Studio() {
   }, [hmState, drawDepth]);
 
   const reprocess = useCallback(() => {
-    if (!rawRef.current) return;
-    const f = processHeightmap(rawRef.current, pp);
-    const w = rawRef.current.w, h = rawRef.current.h;
-    setHmState({ normF32: f, w, h });
-    drawDepth(f, w, h);
-  }, [pp, drawDepth]);
+    const raw = rawRef.current;
+    if (!raw) return;
+    // Depth map importata in passthrough: nessun filtro, nessuna normalizzazione.
+    const f = raw.luma === null && depthRawMode ? raw.depth.slice() : processHeightmap(raw, pp);
+    setHmState({ normF32: f, w: raw.w, h: raw.h });
+    drawDepth(f, raw.w, raw.h);
+  }, [pp, drawDepth, depthRawMode]);
 
   useEffect(() => {
     const timer = window.setTimeout(reprocess, 140);
@@ -455,6 +474,69 @@ export default function Studio() {
       setStatus("Errore: " + (e?.message ?? String(e)));
     } finally { setBusy(false); }
   }, [drawDepth, pp]);
+
+  /** Importa una depth map gia' pronta: nessuna stima AI, nessuna immagine di colore. */
+  const onDepthFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setBusy(true); setDepthError(null); setStatus("Lettura depth map: " + file.name);
+    console.log("[DEPTH IMPORT] file:", file.name, file.type, file.size, "byte");
+    try {
+      const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+      let normF32: Float32Array, w: number, h: number, bitDepth = 8;
+      let precise = false;          // true = letto davvero a 16 bit dal decoder proprio
+      let fallback: string | null = null;
+
+      if (isPng) {
+        // Decoder proprio: legge davvero i 16 bit, senza passare da un canvas a 8 bit.
+        // Non copre pero' i PNG interlacciati ne' quelli a palette (colorType 3).
+        try {
+          const dec = decodeDepthmapPng(new Uint8Array(await file.arrayBuffer()));
+          normF32 = dec.normF32; w = dec.w; h = dec.h; bitDepth = dec.bitDepth ?? 8;
+          precise = true;
+        } catch (e: any) {
+          fallback = e?.message ?? String(e);
+          console.warn("[DEPTH IMPORT] decoder 16 bit non applicabile, ripiego sul canvas:", fallback);
+        }
+      }
+
+      if (!precise) {
+        // Ripiego: qualunque cosa sappia decodificare Chromium, ma a 8 bit per canale.
+        const bmp = await createImageBitmap(file);
+        w = bmp.width; h = bmp.height; bitDepth = 8;
+        const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+        const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+        ctx.drawImage(bmp, 0, 0); bmp.close();
+        normF32 = lumaFromImageData(ctx.getImageData(0, 0, w, h));
+      }
+
+      // Riscalatura con lo stesso filtro di anteprima ed export (low-pass + bilineare).
+      let resampledTo: string | null = null;
+      if (w * h > MAX * MAX) {
+        const r = resampleHeightmapFiltered({ normF32, w, h }, MAX * MAX);
+        resampledTo = r.w + "×" + r.h;
+        normF32 = r.normF32; w = r.w; h = r.h;
+      }
+
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < normF32.length; i++) { const v = normF32[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+
+      rawRef.current = { depth: normF32, luma: null, w, h, device: "import" };
+      setDepthImport({ name: file.name, w, h, bitDepth, lossy: !precise, min: lo, max: hi, resampledTo, fallback });
+      setDepthRawMode(true);
+      setHmState({ normF32, w, h });
+      drawDepth(normF32, w, h);
+      setStep("relief");
+      console.log("[DEPTH IMPORT] ok:", w, "x", h, bitDepth, "bit, range", lo, hi);
+      setStatus("Depth map importata: " + w + "×" + h + ", " + bitDepth + " bit.");
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      console.error("[DEPTH IMPORT] fallito:", err);
+      setDepthError(msg);
+      setStatus("Errore depth map: " + msg);
+    } finally { setBusy(false); }
+  }, [drawDepth]);
 
   const onFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -899,6 +981,53 @@ export default function Studio() {
                 <div style={{ marginTop: 12, padding: 9, border: `1px solid ${C.border}`, borderRadius: 7, color: C.muted, fontSize: 11, lineHeight: 1.5 }}>
                   <b style={{ color: C.text }}>Risoluzione stabile: 1024 px</b><br />La modalità 1600 px è stata rimossa: il dettaglio viene preservato dal filtro V8.3 senza sovraccaricare Electron.
                 </div>
+
+                <div style={{ height: 1, background: C.border, margin: "18px 0 14px" }} />
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Oppure: depth map già pronta</div>
+                <button onClick={() => depthFileRef.current?.click()} style={{ ...ghostBtn, width: "100%", justifyContent: "center" }}>
+                  <Mountain size={15} /> Apri depth map
+                </button>
+                <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 8 }}>
+                  Salta la stima AI e usa una depth map elaborata altrove. Non serve nessuna immagine. PNG 16 bit è il formato di riferimento.
+                </div>
+
+                {depthError && (
+                  <div style={{ marginTop: 12, padding: 9, border: "1px solid #7a3b34", background: "#2a1512", borderRadius: 7, color: "#f0a99c", fontSize: 11, lineHeight: 1.6 }}>
+                    <b style={{ color: "#ffbfb2" }}>Import non riuscito</b><br />{depthError}
+                    <div style={{ marginTop: 6, color: "#c98d81" }}>Se il PNG e' interlacciato o a palette, riesportalo come PNG grayscale 16 bit non interlacciato.</div>
+                  </div>
+                )}
+
+                {depthImport && (
+                  <div style={{ marginTop: 12, padding: 9, border: `1px solid ${C.border}`, borderRadius: 7, color: C.muted, fontSize: 11, lineHeight: 1.6 }}>
+                    <div style={{ color: C.text, fontWeight: 600, marginBottom: 4 }}>{depthImport.name}</div>
+                    {depthImport.w}×{depthImport.h} · {depthImport.bitDepth} bit<br />
+                    Range usato: <b style={{ color: C.text }}>{Math.round((depthImport.max - depthImport.min) * 100)}%</b> del fondo scala ({depthImport.min.toFixed(3)} → {depthImport.max.toFixed(3)})
+                    {depthImport.resampledTo && <><br />Riscalata a {depthImport.resampledTo} per non saturare Electron.</>}
+
+                    {depthImport.max - depthImport.min < 0.4 && (
+                      <div style={{ marginTop: 7, color: "#e2b25c" }}>
+                        ⚠ Range utile sotto il 40%: il rilievo verrà schiacciato. Non è un difetto del programma, è la depth map che usa poca escursione. Riattiva la rielaborazione qui sotto per ridistribuirla.
+                      </div>
+                    )}
+                    {depthImport.lossy && (
+                      <div style={{ marginTop: 7, color: "#e2b25c" }}>
+                        ⚠ Letta a 8 bit per canale: possibili gradini e artefatti sulla superficie stampata. Per la stampa preferisci un PNG grayscale 16 bit non interlacciato.
+                        {depthImport.fallback && <><br /><span style={{ color: "#b8894a" }}>Motivo: {depthImport.fallback}</span></>}
+                      </div>
+                    )}
+
+                    <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9, color: C.text, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!depthRawMode} onChange={(ev) => setDepthRawMode(!ev.target.checked)} />
+                      Rielabora con i controlli di Profondità
+                    </label>
+                    <div style={{ marginTop: 4 }}>
+                      {depthRawMode
+                        ? "Ora la depth map viene usata esattamente com'è: niente livelli, curva, dettaglio o normalizzazione."
+                        : "Livelli, curva e dettaglio della sezione Profondità vengono applicati sopra la depth map importata."}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -1216,6 +1345,7 @@ export default function Studio() {
 
       <input ref={fileRef} type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} />
       <input ref={projRef} type="file" accept=".rforge,application/json" onChange={onOpenProject} style={{ display: "none" }} />
+      <input ref={depthFileRef} type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={onDepthFile} style={{ display: "none" }} />
 
       {commercialEditorOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 80, display: "grid", placeItems: "center", background: "#0009", padding: 24 }}>
