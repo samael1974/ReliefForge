@@ -12,6 +12,20 @@ import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
 import { computeAssemblyLayout, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { buildCircularSolidFromHeightmap } from "@/lib/relief/buildCircularSolid";
 
+/** Stesso ancoraggio usato dall'export (buildReliefAssemblyGeometry): X e Z centrati,
+ *  Y appoggiata a 0. Senza, la mesh resta centrata sull'origine mentre il layout
+ *  piazza la cornice a reliefYOffset + altezza/2, e il rilievo esce dalla cornice di
+ *  meta' della propria altezza. */
+function ancoraComeExport(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  g.computeBoundingBox();
+  const bb = g.boundingBox;
+  if (!bb) return g;
+  const c = new THREE.Vector3();
+  bb.getCenter(c);
+  g.translate(-c.x, -bb.min.y, -c.z);
+  return g;
+}
+
 /** Segnaposto per la mesh del rilievo nei progetti di sola cornice: non disegna nulla. */
 const EMPTY_GEOMETRY = new THREE.BufferGeometry();
 import { resampleHeightmapFiltered } from "@/lib/relief/heightmapMesh";
@@ -180,7 +194,7 @@ function ReliefPreview3DScene({
         // proporzionale al sorgente: e' quello che determina la resa del rilievo.
         maxCells: Math.max(60_000, maxPreviewCells ?? 260_000),
       });
-      return toBufferGeometry(out.vertices, out.indices);
+      return ancoraComeExport(toBufferGeometry(out.vertices, out.indices));
     }
 
     const manualFactor = Math.max(1, Math.floor(decimateStep || 1));

@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { buildSolidFromHeightmap } from "../src/lib/relief/buildSolidFromHeightmap";
 import { buildCircularSolidFromHeightmap } from "../src/lib/relief/buildCircularSolid";
 import { getManifold, geomToManifold, manifoldToGeom } from "../src/components/relief/reliefStl";
+import { computeAssemblyLayout } from "../src/lib/relief/frame/assemblyLayout";
 
 let fail = 0;
 const check = (ok: boolean, msg: string) => { console.log(`  ${ok ? "✓" : "✗"} ${msg}`); if (!ok) fail++; };
@@ -200,6 +201,36 @@ console.log("");
   check(openEdges(arr.indices) === 0, "mesh chiusa anche sul dominio arrotondato");
   check(spigoli === 0, `nessuno spigolo quadro superstite (${spigoli} vertici nell'angolo)`);
   check(Math.abs(maxX * 2 - Wmm) < 0.2 && Math.abs(maxY * 2 - Hmm) < 0.2, "ingombro pari alle quote richieste");
+}
+
+
+// ---------------------------------------------------------------------------
+// CENTRAMENTO CORNICE / RILIEVO. La cornice viene piazzata a layout.centerY.
+// Se quel valore non coincide con il centro reale della mesh del rilievo, in
+// anteprima il bassorilievo esce dalla cornice: e' il difetto visto in foto.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("CENTRAMENTO CORNICE / RILIEVO");
+console.log("");
+{
+  // Si replica l'ancoraggio dell'export (X e Z centrati, Y appoggiata a 0, poi +1)
+  // sulla mesh VERA e si confronta il centro risultante con quello dove il layout
+  // piazza la cornice. Se non coincidono, il rilievo esce dalla cornice.
+  const bb = bbox(diretta.vertices, diretta.vertices.length / 3);
+  const altezza = bb.y1 - bb.y0;
+  const centroDopoAncoraggio = 1 + altezza / 2;
+  const L = computeAssemblyLayout({
+    reliefW: bb.x1 - bb.x0, reliefH: altezza, reliefThicknessMm: BASE + DEPTH,
+    reliefYOffset: 1, reliefZmm: 0, matZmm: 0,
+    frame: {
+      solidMm: 5, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
+      lipMm: 3, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.2,
+    },
+    mat: null, welded: false,
+  } as any);
+  console.log(`   centro del rilievo ancorato ${centroDopoAncoraggio.toFixed(2)} mm   cornice a ${L.centerY.toFixed(2)} mm`);
+  check(Math.abs(L.centerY - centroDopoAncoraggio) < 0.01, `cornice e rilievo concentrici (scarto ${(L.centerY - centroDopoAncoraggio).toFixed(3)} mm)`);
+  check(Math.abs(bb.y0 + bb.y1) < 0.01, "la mesh esce centrata sull'origine: l'anteprima DEVE ri-ancorarla come l'export");
 }
 
 console.log(fail ? `❌ ${fail} controllo/i fallito/i.` : "✅ tutti i controlli superati");
