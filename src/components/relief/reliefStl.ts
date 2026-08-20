@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
+import { buildCircularSolidFromHeightmap } from "@/lib/relief/buildCircularSolid";
 import { buildAdaptiveSolidFromHeightmap } from "@/lib/relief/buildAdaptiveSolid";
 import { buildPassepartoutManifold } from "@/lib/relief/frame/buildPassepartoutManifold";
 import { roundedBox, FRAME_CORNER_SEGMENTS } from "@/lib/relief/frame/manifoldPrimitives";
@@ -23,6 +24,8 @@ type DownloadArgs = {
   fileName?: string;
   /** V8.5 — errore geometrico massimo (mm) del mesher adattivo. Assente/0 = griglia uniforme. */
   toleranceMm?: number;
+  /** V8.14 — se valorizzato, il rilievo e' un disco di questo diametro (mm). */
+  circularDiameterMm?: number;
 };
 
 /** V8.5: mesher adattivo se e' stata indicata una tolleranza, altrimenti griglia uniforme.
@@ -30,8 +33,22 @@ type DownloadArgs = {
  *  triangoli a parita' di resa, e il CSG manifold di conseguenza e' molto piu' rapido. */
 export function buildReliefSolid(a: {
   hm: HeightmapState; widthMm: number; depthMm: number; baseMm: number;
-  baseStyle: BaseStyle; toleranceMm?: number;
+  baseStyle: BaseStyle; toleranceMm?: number; circularDiameterMm?: number;
 }) {
+  // Rilievo CIRCOLARE: mesh costruita direttamente tonda. Il confronto misurato con
+  // l'intersezione booleana e' in scripts/circular-check.mts: 154x piu' veloce, meta'
+  // dei triangoli, bordo esatto invece che poligonale.
+  if (a.circularDiameterMm && a.circularDiameterMm > 0) {
+    const out = buildCircularSolidFromHeightmap({
+      height01: a.hm.normF32, width: a.hm.w, height: a.hm.h,
+      outDiameterMm: a.circularDiameterMm, depthMm: a.depthMm, baseMm: a.baseMm,
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(out.vertices, 3));
+    g.setIndex(new THREE.BufferAttribute(out.indices, 1));
+    g.computeVertexNormals();
+    return { geometry: g, vertices: out.vertices, indices: out.indices };
+  }
   if (a.toleranceMm && a.toleranceMm > 0) {
     return buildAdaptiveSolidFromHeightmap({
       height01: a.hm.normF32, width: a.hm.w, height: a.hm.h,
@@ -289,7 +306,8 @@ export async function buildReliefAssemblyGeometry(
   const planW = widthMm;
   // Stessa formula di buildSolidFromHeightmap: usa i SEGMENTI (w-1, h-1), non i pixel.
   // Con (h/w) la cornice risultava ~0.03 mm più alta del rilievo che doveva contenere.
-  const planH = widthMm * ((hm.h - 1) / (hm.w - 1));
+  // Rilievo tondo: l'impronta e' quadrata, altrimenti la cornice resterebbe rettangolare.
+  const planH = args.circularDiameterMm && args.circularDiameterMm > 0 ? planW : widthMm * ((hm.h - 1) / (hm.w - 1));
 
   // V8.5: tutte le quote derivate vengono da UNA sola funzione, condivisa con l'anteprima.
   const L = computeAssemblyLayout({
@@ -514,7 +532,7 @@ export function buildReliefStlBinary(args: DownloadArgs): ArrayBuffer {
   if (!hm) throw new Error("STL: missing heightmap (hm)");
   if (!(hm.normF32 instanceof Float32Array)) throw new Error("STL: hm.normF32 missing/invalid");
 
-  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm });
+  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm, circularDiameterMm: args.circularDiameterMm });
 const geom = out.geometry;
 geom.rotateZ(Math.PI);
 geom.computeVertexNormals();

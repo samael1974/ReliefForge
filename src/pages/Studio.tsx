@@ -13,7 +13,7 @@ import ReliefPreview3D, { type HeightmapState } from "@/components/relief/Relief
 import type { AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import DepthCurve from "@/components/relief/DepthCurve";
 import { IDENTITY_CURVE, applyCurve, buildCurveLut, levelsCurve, type CurvePoint } from "@/lib/relief/transform/toneCurve";
-import { downloadReliefStlBinary, downloadReliefAssemblyStl } from "@/components/relief/reliefStl";
+import { downloadReliefStlBinary, downloadReliefAssemblyStl, buildReliefSolid } from "@/components/relief/reliefStl";
 import { estimateDepth } from "@/lib/relief/depth/estimateDepth";
 import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
 import * as THREE from "three";
@@ -400,8 +400,10 @@ export default function Studio() {
   // Un cerchio e' un rettangolo con raggio d'angolo pari a meta' lato: roundedBox
   // clampa il raggio a w/2, quindi un raggio enorme rende tondo OGNI pezzo
   // (cornice, battuta, vetro, veletta) alla propria misura, senza codice nuovo.
-  const effShape: ProjectShape = hmState ? "rect" : shape;
-  const openingH = effShape === "rect" ? openingHmm : widthMm;
+  const effShape: ProjectShape = shape;
+  const openingH = effShape === "rect" ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm) : widthMm;
+  // Diametro del rilievo tondo: solo quando c'e' davvero un rilievo da ritagliare.
+  const reliefDiameter = effShape === "circle" && hmState ? widthMm : undefined;
   const frameCornerR = effShape === "circle" ? 1e6 : frameP.cornerRadiusMm;
   const frameForBuild = useMemo(
     () => ({ ...frameP, cornerRadiusMm: frameCornerR, glassSeatDepthMm: glassSeatDepth }),
@@ -460,7 +462,15 @@ export default function Studio() {
     const raw = rawRef.current;
     if (!raw) return;
     // Depth map importata in passthrough: nessun filtro, nessuna normalizzazione.
-    const f = raw.luma === null && depthRawMode ? raw.depth.slice() : processHeightmap(raw, pp);
+    // La CURVA pero' resta disponibile: di default e' l'identita', quindi non tocca
+    // nulla finche' non la si muove. Cosi' chi importa una depth map gia' pronta
+    // puo' comunque ritoccarne la resa senza rinunciare al passthrough.
+    const soloCurva = (d: Float32Array) => {
+      const c = pp.curve;
+      const identita = c.length === 2 && c[0].x === 0 && c[0].y === 0 && c[1].x === 1 && c[1].y === 1;
+      return identita ? d.slice() : applyCurve(d, buildCurveLut(c));
+    };
+    const f = raw.luma === null && depthRawMode ? soloCurva(raw.depth) : processHeightmap(raw, pp);
     setHmState({ normF32: f, w: raw.w, h: raw.h });
     drawDepth(f, raw.w, raw.h);
   }, [pp, drawDepth, depthRawMode]);
@@ -685,7 +695,7 @@ export default function Studio() {
       const hm = prepareExportHeightmap();
       if (!hm) return;
       const { triangles } = downloadReliefStlBinary({
-        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm,
+        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
         outputMode: "relief" as any, baseStyle: "flat" as any, fileName: "reliefforge",
       });
       // Conteggio REALE: con la mesh adattiva la stima sulla griglia sbagliava di
@@ -703,7 +713,7 @@ export default function Studio() {
       if (!hm) return;
       const res = await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
-        toleranceMm: exportToleranceMm,
+        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
         fileName: "reliefforge-cornice", reliefZmm: reliefZ, matZmm: matZ,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -731,7 +741,7 @@ export default function Studio() {
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
-        toleranceMm: exportToleranceMm,
+        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
         fileName: "reliefforge-cornice-sola", reliefZmm: reliefZ, matZmm: matZ, frameOnly: true,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -766,13 +776,13 @@ export default function Studio() {
     if (!hmState) return null;
     const hm = prepareExportHeightmap();
     if (!hm) return null;
-    const { geometry } = buildSolidFromHeightmap({
-      height01: hm.normF32, width: hm.w, height: hm.h,
-      outWidthMm: Math.max(1, widthMm), depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
-      baseStyle: "flat" as any, invert: false, clampHeights: true, minBaseMm: 0.4,
-    } as any);
+    const { geometry } = buildReliefSolid({
+      hm,
+      widthMm: Math.max(1, widthMm), depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
+      baseStyle: "flat", toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
+    });
     return geometry as any;
-  }, [hmState, prepareExportHeightmap, widthMm, depthMm, baseMm]);
+  }, [hmState, prepareExportHeightmap, widthMm, depthMm, baseMm, exportToleranceMm, reliefDiameter]);
 
   const exportMesh = useCallback((fmt: "obj" | "ply") => {
     if (!hmState) { setStatus("Genera prima il rilievo."); return; }
@@ -968,7 +978,7 @@ export default function Studio() {
             </button>
           )}
           {(hmState || frameOn || matOn) ? (
-            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} stlWidthMm={widthMm} decimateStep={decimate}
+            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} circularDiameterMm={reliefDiameter} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
               depthMm={depthMm} baseMm={baseMm} baseStyle={"flat" as any} outputMode={"relief"} bgColor={C.viewport}
               reliefZmm={reliefZ}
@@ -1023,7 +1033,7 @@ export default function Studio() {
                   <Mountain size={15} /> Apri depth map
                 </button>
                 <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 8 }}>
-                  Salta la stima AI e usa una depth map elaborata altrove. Non serve nessuna immagine. PNG 16 bit è il formato di riferimento.
+                  Salta la stima AI e usa una depth map elaborata altrove. Non serve nessuna immagine. PNG 16 bit è il formato di riferimento. Potrai comunque ritoccarla con la Curva profondità.
                 </div>
 
                 <div style={{ height: 1, background: C.border, margin: "18px 0 14px" }} />
@@ -1067,7 +1077,7 @@ export default function Studio() {
                     </label>
                     <div style={{ marginTop: 4 }}>
                       {depthRawMode
-                        ? "Ora la depth map viene usata esattamente com'è: niente livelli, curva, dettaglio o normalizzazione."
+                        ? "Ora la depth map viene usata esattamente com'è: niente livelli, dettaglio o normalizzazione. La Curva profondità resta però disponibile in fondo al pannello: parte dall'identità, quindi non tocca nulla finché non la muovi."
                         : "Livelli, curva e dettaglio della sezione Profondità vengono applicati sopra la depth map importata."}
                     </div>
                   </div>
@@ -1166,8 +1176,35 @@ export default function Studio() {
                 <PanelTitle Icon={FrameIcon} text="Cornice & passepartout" />
 
                 <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 10px", marginBottom: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 7 }}>APERTURA</div>
-                  {hmState ? (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 7 }}>APERTURA E FORMA</div>
+
+                  <div style={{ display: "flex", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 11, marginBottom: 12 }}>
+                    {([["rect", "Rettangolare"], ["square", "Quadrata"], ["circle", "Rotonda"]] as [ProjectShape, string][]).map(([id, label], i) => (
+                      <button key={id} onClick={() => setShape(id)} style={{
+                        flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
+                        borderLeft: i ? `1px solid ${C.border2}` : "none",
+                        background: shape === id ? C.accent : "transparent",
+                        color: shape === id ? C.accentInk : C.muted,
+                        fontWeight: shape === id ? 600 : 400,
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
+                  {effShape === "circle" ? (
+                    <>
+                      <Slider label={hmState ? "Diametro rilievo" : "Diametro apertura"} value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        {hmState
+                          ? "Il bassorilievo viene costruito direttamente tondo, non ritagliato: il bordo è un cerchio esatto. Cornice, battuta, vetro e veletta seguono lo stesso profilo."
+                          : "Battuta, vetro e veletta seguono lo stesso profilo tondo. Il diametro esterno reale è in Quote risultanti qui sotto."}
+                      </div>
+                    </>
+                  ) : effShape === "square" ? (
+                    <>
+                      <Slider label="Lato apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>🔒 Altezza uguale alla larghezza.</div>
+                    </>
+                  ) : hmState ? (
                     <>
                       <div style={{ ...fieldLabel, marginBottom: 8 }}>
                         <span>Larghezza</span><span style={{ color: C.text }}>{Math.round(widthMm)} mm</span>
@@ -1181,42 +1218,10 @@ export default function Studio() {
                     </>
                   ) : (
                     <>
-                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>Forma</div>
-                      <div style={{ display: "flex", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 11, marginBottom: 12 }}>
-                        {([["rect", "Rettangolare"], ["square", "Quadrata"], ["circle", "Rotonda"]] as [ProjectShape, string][]).map(([id, label], i) => (
-                          <button key={id} onClick={() => setShape(id)} style={{
-                            flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
-                            borderLeft: i ? `1px solid ${C.border2}` : "none",
-                            background: shape === id ? C.accent : "transparent",
-                            color: shape === id ? C.accentInk : C.muted,
-                            fontWeight: shape === id ? 600 : 400,
-                          }}>{label}</button>
-                        ))}
-                      </div>
-
-                      {shape === "circle" ? (
-                        <>
-                          <Slider label="Diametro apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                          <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
-                            Battuta, vetro e veletta seguono lo stesso profilo tondo. Il diametro esterno reale è in <b style={{ color: C.muted }}>Quote risultanti</b> qui sotto: oltre al bordo contano anche battuta e gioco.
-                          </div>
-                        </>
-                      ) : shape === "square" ? (
-                        <>
-                          <Slider label="Lato apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                          <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
-                            🔒 Altezza uguale alla larghezza.
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                          <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
-                        </>
-                      )}
-
-                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 8 }}>
-                        Progetto di sola cornice. Se apri un'immagine o una depth map, l'apertura torna rettangolare e si adatta alle sue proporzioni.
+                      <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        Progetto di sola cornice. Se apri un'immagine, l'apertura si adatta alle sue proporzioni.
                       </div>
                     </>
                   )}

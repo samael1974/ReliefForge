@@ -10,6 +10,7 @@ import type { BaseStyle } from "@/lib/relief/reliefTypes";
 import { buildPassepartoutRectPhi } from "@/lib/relief/frame/buildPassepartoutRectPhi";
 import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
 import { computeAssemblyLayout, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
+import { buildCircularSolidFromHeightmap } from "@/lib/relief/buildCircularSolid";
 
 /** Segnaposto per la mesh del rilievo nei progetti di sola cornice: non disegna nulla. */
 const EMPTY_GEOMETRY = new THREE.BufferGeometry();
@@ -60,6 +61,8 @@ type Props = {
   stlWidthMm: number;
   /** Altezza dell'apertura in mm quando non c'e' rilievo (progetto di sola cornice). */
   openingHeightMm?: number;
+  /** Se valorizzato, il rilievo e' un disco di questo diametro. */
+  circularDiameterMm?: number;
   decimateStep: number;
   maxPreviewCells?: number;
   depthMm: number;
@@ -132,6 +135,7 @@ function ReliefPreview3DScene({
   hmState,
   stlWidthMm,
   openingHeightMm,
+  circularDiameterMm,
   decimateStep,
   maxPreviewCells = 300_000,
   depthMm,
@@ -155,6 +159,18 @@ function ReliefPreview3DScene({
 }: Props): JSX.Element {
   const solidGeometry = useMemo(() => {
     if (!hmState) return null;
+
+    // Rilievo circolare: mesh costruita direttamente tonda (vedi circular-check).
+    if (circularDiameterMm && circularDiameterMm > 0) {
+      const out = buildCircularSolidFromHeightmap({
+        height01: hmState.normF32, width: hmState.w, height: hmState.h,
+        outDiameterMm: circularDiameterMm,
+        depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
+        // In anteprima bastano meno anelli: la resa non cambia, la reattivita' si'.
+        radialSteps: 120, angularSteps: 240,
+      });
+      return toBufferGeometry(out.vertices, out.indices);
+    }
 
     const manualFactor = Math.max(1, Math.floor(decimateStep || 1));
     const common = {
@@ -189,7 +205,7 @@ function ReliefPreview3DScene({
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
-  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm]);
+  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm, circularDiameterMm]);
 
   const reliefTopY = useMemo(() => {
     if (!solidGeometry) return 0;
@@ -202,11 +218,16 @@ function ReliefPreview3DScene({
     // Senza rilievo l'impronta la detta l'apertura dichiarata: e' il progetto di
     // sola cornice. Il quadrato resta solo come ultimo ripiego.
     if (!hmState) return { w: Math.max(1, stlWidthMm), h: Math.max(1, openingHeightMm ?? stlWidthMm) };
+    // Rilievo tondo: impronta quadrata, altrimenti la cornice resterebbe rettangolare.
+    if (circularDiameterMm && circularDiameterMm > 0) {
+      const d = Math.max(1, circularDiameterMm);
+      return { w: d, h: d };
+    }
     const w = Math.max(1, stlWidthMm);
     // Stessa formula di buildSolidFromHeightmap (segmenti, non pixel).
     const h = w * ((hmState.h - 1) / (hmState.w - 1));
     return { w, h };
-  }, [hmState, stlWidthMm, openingHeightMm]);
+  }, [hmState, stlWidthMm, openingHeightMm, circularDiameterMm]);
 
   /** Spessore Z reale del solido rilievo, letto dalla geometria costruita. */
   const reliefThicknessMm = useMemo(() => {
