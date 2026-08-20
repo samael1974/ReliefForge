@@ -174,5 +174,33 @@ check(bordoA.scarto < 0.01, `A: bordo circolare esatto (scarto ${bordoA.scarto.t
 check(diretta.triangles > 1000, `A: risoluzione sensata (${diretta.triangles} triangoli)`);
 check(apertiB === 0, `B: mesh chiusa dopo la booleana (spigoli aperti ${apertiB})`);
 
+
+// ---------------------------------------------------------------------------
+// DOMINIO RETTANGOLARE AD ANGOLI ARROTONDATI: serve a far combaciare il rilievo
+// con una cornice arrotondata. Senza, gli spigoli quadrati sbordano oltre il
+// raggio della cornice - e in anteprima si vedeva, nell'export no.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("RILIEVO AD ANGOLI ARROTONDATI");
+console.log("");
+{
+  const Wmm = 120, Hmm = 90, Rc = 15;
+  const arr = buildCircularSolidFromHeightmap({
+    height01, width: W, height: H,
+    outDiameterMm: Wmm, outWidthMm: Wmm, outHeightMm: Hmm, cornerRadiusMm: Rc,
+    depthMm: DEPTH, baseMm: BASE, maxCells: 200_000,
+  });
+  let spigoli = 0, maxX = 0, maxY = 0;
+  for (let i = 0; i < arr.vertices.length; i += 3) {
+    const x = Math.abs(arr.vertices[i]!), y = Math.abs(arr.vertices[i + 1]!);
+    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+    if (x > Wmm / 2 - 0.05 && y > Hmm / 2 - 0.05) spigoli++;
+  }
+  console.log(`   ingombro ${(maxX * 2).toFixed(2)} x ${(maxY * 2).toFixed(2)} mm, raggio richiesto ${Rc} mm`);
+  check(openEdges(arr.indices) === 0, "mesh chiusa anche sul dominio arrotondato");
+  check(spigoli === 0, `nessuno spigolo quadro superstite (${spigoli} vertici nell'angolo)`);
+  check(Math.abs(maxX * 2 - Wmm) < 0.2 && Math.abs(maxY * 2 - Hmm) < 0.2, "ingombro pari alle quote richieste");
+}
+
 console.log(fail ? `❌ ${fail} controllo/i fallito/i.` : "✅ tutti i controlli superati");
 process.exitCode = fail ? 1 : 0;

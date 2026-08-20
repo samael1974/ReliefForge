@@ -26,6 +26,8 @@ type DownloadArgs = {
   toleranceMm?: number;
   /** V8.14 — se valorizzato, il rilievo e' un disco di questo diametro (mm). */
   circularDiameterMm?: number;
+  /** V8.19 — angoli arrotondati del rilievo (mm). */
+  reliefCornerRadiusMm?: number;
 };
 
 /** V8.5: mesher adattivo se e' stata indicata una tolleranza, altrimenti griglia uniforme.
@@ -34,14 +36,22 @@ type DownloadArgs = {
 export function buildReliefSolid(a: {
   hm: HeightmapState; widthMm: number; depthMm: number; baseMm: number;
   baseStyle: BaseStyle; toleranceMm?: number; circularDiameterMm?: number;
+  /** Angoli arrotondati del rilievo, per combaciare con una cornice arrotondata. */
+  reliefCornerRadiusMm?: number;
 }) {
   // Rilievo CIRCOLARE: mesh costruita direttamente tonda. Il confronto misurato con
   // l'intersezione booleana e' in scripts/circular-check.mts: 154x piu' veloce, meta'
   // dei triangoli, bordo esatto invece che poligonale.
-  if (a.circularDiameterMm && a.circularDiameterMm > 0) {
+  const rCorner = Math.max(0, a.reliefCornerRadiusMm ?? 0);
+  if ((a.circularDiameterMm && a.circularDiameterMm > 0) || rCorner > 0.01) {
+    const wMm = a.widthMm;
+    const hMm = a.widthMm * ((a.hm.h - 1) / (a.hm.w - 1));
     const out = buildCircularSolidFromHeightmap({
       height01: a.hm.normF32, width: a.hm.w, height: a.hm.h,
-      outDiameterMm: a.circularDiameterMm, depthMm: a.depthMm, baseMm: a.baseMm,
+      outDiameterMm: a.circularDiameterMm ?? wMm, depthMm: a.depthMm, baseMm: a.baseMm,
+      ...(a.circularDiameterMm && a.circularDiameterMm > 0
+        ? {}
+        : { outWidthMm: wMm, outHeightMm: hMm, cornerRadiusMm: rCorner }),
     });
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(out.vertices, 3));
@@ -555,7 +565,7 @@ export function buildReliefStlBinary(args: DownloadArgs): ArrayBuffer {
   if (!hm) throw new Error("STL: missing heightmap (hm)");
   if (!(hm.normF32 instanceof Float32Array)) throw new Error("STL: hm.normF32 missing/invalid");
 
-  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm, circularDiameterMm: args.circularDiameterMm });
+  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm, circularDiameterMm: args.circularDiameterMm, reliefCornerRadiusMm: args.reliefCornerRadiusMm });
 const geom = out.geometry;
 geom.rotateZ(Math.PI);
 geom.computeVertexNormals();

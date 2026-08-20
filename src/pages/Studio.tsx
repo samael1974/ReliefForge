@@ -404,6 +404,9 @@ export default function Studio() {
   const openingH = effShape === "rect" ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm) : widthMm;
   // Diametro del rilievo tondo: solo quando c'e' davvero un rilievo da ritagliare.
   const reliefDiameter = effShape === "circle" && hmState ? widthMm : undefined;
+  // Il rilievo segue il raggio della cornice, rientrato dello spessore del bordo:
+  // senza, i suoi spigoli quadrati sbordano oltre gli angoli arrotondati.
+  const reliefCornerR = effShape === "circle" || !frameOn ? 0 : Math.max(0, frameP.cornerRadiusMm - frameP.solidMm);
   const frameCornerR = effShape === "circle" ? 1e6 : frameP.cornerRadiusMm;
   const frameForBuild = useMemo(
     () => ({ ...frameP, cornerRadiusMm: frameCornerR, glassSeatDepthMm: glassSeatDepth }),
@@ -695,7 +698,7 @@ export default function Studio() {
       const hm = prepareExportHeightmap();
       if (!hm) return;
       const { triangles } = downloadReliefStlBinary({
-        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
+        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
         outputMode: "relief" as any, baseStyle: "flat" as any, fileName: "reliefforge",
       });
       // Conteggio REALE: con la mesh adattiva la stima sulla griglia sbagliava di
@@ -713,7 +716,7 @@ export default function Studio() {
       if (!hm) return;
       const res = await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
-        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
+        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
         fileName: "reliefforge-cornice", reliefZmm: reliefZ, matZmm: matZ,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -741,7 +744,7 @@ export default function Studio() {
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
-        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
+        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
         fileName: "reliefforge-cornice-sola", reliefZmm: reliefZ, matZmm: matZ, frameOnly: true,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -779,7 +782,7 @@ export default function Studio() {
     const { geometry } = buildReliefSolid({
       hm,
       widthMm: Math.max(1, widthMm), depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
-      baseStyle: "flat", toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter,
+      baseStyle: "flat", toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
     });
     return geometry as any;
   }, [hmState, prepareExportHeightmap, widthMm, depthMm, baseMm, exportToleranceMm, reliefDiameter]);
@@ -978,7 +981,7 @@ export default function Studio() {
             </button>
           )}
           {(hmState || frameOn || matOn) ? (
-            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} circularDiameterMm={reliefDiameter} stlWidthMm={widthMm} decimateStep={decimate}
+            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} circularDiameterMm={reliefDiameter} reliefCornerRadiusMm={reliefCornerR} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
               depthMm={depthMm} baseMm={baseMm} baseStyle={"flat" as any} outputMode={"relief"} bgColor={C.viewport}
               reliefZmm={reliefZ}

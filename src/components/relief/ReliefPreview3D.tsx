@@ -64,6 +64,8 @@ type Props = {
   openingHeightMm?: number;
   /** Se valorizzato, il rilievo e' un disco di questo diametro. */
   circularDiameterMm?: number;
+  /** Angoli arrotondati del rilievo, per combaciare con la cornice. */
+  reliefCornerRadiusMm?: number;
   decimateStep: number;
   maxPreviewCells?: number;
   depthMm: number;
@@ -137,6 +139,7 @@ function ReliefPreview3DScene({
   stlWidthMm,
   openingHeightMm,
   circularDiameterMm,
+  reliefCornerRadiusMm,
   decimateStep,
   maxPreviewCells = 300_000,
   depthMm,
@@ -162,10 +165,16 @@ function ReliefPreview3DScene({
     if (!hmState) return null;
 
     // Rilievo circolare: mesh costruita direttamente tonda (vedi circular-check).
-    if (circularDiameterMm && circularDiameterMm > 0) {
+    const rCornerRel = Math.max(0, reliefCornerRadiusMm ?? 0);
+    if ((circularDiameterMm && circularDiameterMm > 0) || rCornerRel > 0.01) {
+      const wMm = Math.max(1, stlWidthMm);
+      const hMm = wMm * ((hmState.h - 1) / (hmState.w - 1));
       const out = buildCircularSolidFromHeightmap({
         height01: hmState.normF32, width: hmState.w, height: hmState.h,
-        outDiameterMm: circularDiameterMm,
+        outDiameterMm: circularDiameterMm ?? wMm,
+        ...(circularDiameterMm && circularDiameterMm > 0
+          ? {}
+          : { outWidthMm: wMm, outHeightMm: hMm, cornerRadiusMm: rCornerRel }),
         depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
         // In anteprima si usa un budget di celle piu' basso, ma la DENSITA' resta
         // proporzionale al sorgente: e' quello che determina la resa del rilievo.
@@ -207,7 +216,7 @@ function ReliefPreview3DScene({
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
-  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm, circularDiameterMm]);
+  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm, circularDiameterMm, reliefCornerRadiusMm]);
 
   const reliefTopY = useMemo(() => {
     if (!solidGeometry) return 0;
@@ -374,6 +383,12 @@ function ReliefPreview3DScene({
     );
   }
 
+  // In WIREFRAME i colori delle preferenze (spesso vicini fra loro e scuri) rendono
+  // illeggibili gli accoppiamenti: si passa a una terna ad alto contrasto.
+  const col = wireframe
+    ? { relief: "#7CE3FF", frame: "#FFB454", mat: "#C7F45A" }
+    : colors;
+
   const width = Math.max(1, stlWidthMm);
   const camDist = Math.max(220, width * 1.6);
   const groundY = -0.01;
@@ -474,7 +489,7 @@ function ReliefPreview3DScene({
               receiveShadow
             >
               <meshPhysicalMaterial
-                color={colors.mat}
+                color={col.mat}
                 roughness={0.85}
                 metalness={0.0}
                 clearcoat={0.0}
@@ -496,10 +511,10 @@ function ReliefPreview3DScene({
 
 
             {matcap ? (
-              <meshMatcapMaterial matcap={matcap} color={colors.relief} wireframe={wireframe} />
+              <meshMatcapMaterial matcap={matcap} color={col.relief} wireframe={wireframe} />
             ) : (
               <meshPhysicalMaterial
-                color={colors.relief}
+                color={col.relief}
                 roughness={reliefMat.roughness}
                 metalness={reliefMat.metalness}
                 clearcoat={reliefMat.clearcoat}
@@ -518,10 +533,10 @@ function ReliefPreview3DScene({
               receiveShadow
             >
               {matcap ? (
-                <meshMatcapMaterial matcap={matcap} color={colors.frame} side={THREE.DoubleSide} wireframe={wireframe} />
+                <meshMatcapMaterial matcap={matcap} color={col.frame} side={THREE.DoubleSide} wireframe={wireframe} />
               ) : (
                 <meshPhysicalMaterial
-                  color={colors.frame}
+                  color={col.frame}
                   roughness={frameMat.roughness}
                   metalness={frameMat.metalness}
                   clearcoat={frameMat.clearcoat}
@@ -543,10 +558,10 @@ function ReliefPreview3DScene({
               receiveShadow
             >
               {matcap ? (
-                <meshMatcapMaterial matcap={matcap} color={colors.frame} side={THREE.DoubleSide} wireframe={wireframe} />
+                <meshMatcapMaterial matcap={matcap} color={col.frame} side={THREE.DoubleSide} wireframe={wireframe} />
               ) : (
                 <meshPhysicalMaterial
-                  color={colors.frame}
+                  color={col.frame}
                   roughness={frameMat.roughness}
                   metalness={frameMat.metalness}
                   clearcoat={frameMat.clearcoat}

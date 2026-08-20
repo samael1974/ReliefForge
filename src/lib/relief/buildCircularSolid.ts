@@ -17,8 +17,15 @@ export type BuildCircularSolidInput = {
   height01: Float32Array;
   width: number;
   height: number;
-  /** Diametro finale del pezzo in mm. */
+  /** Diametro finale del pezzo in mm (dominio circolare). */
   outDiameterMm: number;
+  /** Dominio RETTANGOLARE ad angoli arrotondati: larghezza e altezza in mm.
+   *  Se valorizzati sostituiscono il cerchio e il campionamento copre tutta
+   *  l'immagine invece del solo quadrato centrale. */
+  outWidthMm?: number;
+  outHeightMm?: number;
+  /** Raggio degli angoli del dominio rettangolare. */
+  cornerRadiusMm?: number;
   /** Ampiezza del rilievo in mm. */
   depthMm: number;
   /** Spessore della base sotto il rilievo in mm. */
@@ -61,7 +68,7 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
   // Densita' di campionamento legata al SORGENTE, non a numeri fissi. Con passi
   // costanti il bordo del disco veniva campionato fino a 9 volte piu' grosso del
   // pixel dell'immagine, e il rilievo usciva impastato.
-  const pxMm = R * 2 / Math.max(2, Math.min(w, h));
+  const pxMm = (input.outWidthMm ?? R * 2) / Math.max(2, Math.min(w, h));
   let na = Math.max(24, Math.round(input.angularSteps ?? Math.ceil((2 * Math.PI * R) / pxMm)));
   let nr = Math.max(2, Math.round(input.radialSteps ?? Math.ceil(R / pxMm)));
   const budget = Math.max(10_000, input.maxCells ?? 1_400_000);
@@ -71,15 +78,53 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
     nr = Math.max(32, Math.round(nr * k));
   }
 
-  // Il cerchio e' inscritto nel quadrato centrato dell'immagine: cosi' un ritratto
-  // resta centrato e non si deforma.
+  // Dominio: cerchio, oppure rettangolo ad angoli arrotondati. Il secondo serve a
+  // far combaciare il rilievo con una cornice arrotondata: senza, gli spigoli
+  // quadrati del bassorilievo sbordano oltre il raggio della cornice.
+  const rectMode = !!(input.outWidthMm && input.outHeightMm);
+  const halfW = rectMode ? input.outWidthMm! / 2 : R;
+  const halfH = rectMode ? input.outHeightMm! / 2 : R;
+  const rCorner = rectMode
+    ? Math.max(0, Math.min(input.cornerRadiusMm ?? 0, halfW - 0.01, halfH - 0.01))
+    : R;
+
+  /** Punto del contorno per l'angolo dato, su un rettangolo ad angoli arrotondati.
+   *  Con rCorner = meta' lato torna esattamente il cerchio. */
+  const outline = (ang: number): { x: number; y: number } => {
+    if (!rectMode) return { x: R * Math.cos(ang), y: R * Math.sin(ang) };
+    // Raggio del contorno nella direzione ang: si interseca la semiretta con il
+    // rettangolo smussato campionando la forma in coordinate normalizzate.
+    const cxr = halfW - rCorner, cyr = halfH - rCorner;
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    // Bisezione: robusta e sufficiente, il contorno e' convesso.
+    const dentro = (t: number) => {
+      const x = Math.abs(dx * t), y = Math.abs(dy * t);
+      if (x <= cxr && y <= cyr) return true;
+      if (x > halfW || y > halfH) return false;
+      const ox = Math.max(0, x - cxr), oy = Math.max(0, y - cyr);
+      return ox * ox + oy * oy <= rCorner * rCorner + 1e-9;
+    };
+    let lo = 0, hi = Math.hypot(halfW, halfH);
+    for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (dentro(mid)) lo = mid; else hi = mid; }
+    return { x: dx * lo, y: dy * lo };
+  };
+
+  // Campionamento: nel cerchio si usa il quadrato centrato dell'immagine (nessuna
+  // deformazione); nel rettangolo si copre tutta l'immagine, che ha la stessa forma.
   const cx = (w - 1) / 2;
   const cy = (h - 1) / 2;
   const halfPx = Math.min(w - 1, h - 1) / 2;
 
   const zAt = (rNorm: number, ang: number): number => {
-    const px = cx + rNorm * halfPx * Math.cos(ang);
-    const py = cy + rNorm * halfPx * Math.sin(ang);
+    let px: number, py: number;
+    if (rectMode) {
+      const o = outline(ang);
+      px = cx + (o.x * rNorm / halfW) * ((w - 1) / 2);
+      py = cy + (o.y * rNorm / halfH) * ((h - 1) / 2);
+    } else {
+      px = cx + rNorm * halfPx * Math.cos(ang);
+      py = cy + rNorm * halfPx * Math.sin(ang);
+    }
     let v = sampleBilinear(height01, w, h, px, py);
     if (input.invert) v = 1 - v;
     v = v < 0 ? 0 : v > 1 ? 1 : v;
@@ -107,17 +152,15 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
 
   for (let i = 1; i <= nr; i++) {
     const rNorm = i / nr;
-    const rMm = rNorm * R;
     for (let j = 0; j < na; j++) {
       const ang = (j / na) * Math.PI * 2;
-      const x = rMm * Math.cos(ang);
-      const y = rMm * Math.sin(ang);
-      put(topIdx(i, j), x, y, zAt(rNorm, ang));
+      const o = outline(ang);
+      put(topIdx(i, j), o.x * rNorm, o.y * rNorm, zAt(rNorm, ang));
     }
   }
   for (let j = 0; j < na; j++) {
-    const ang = (j / na) * Math.PI * 2;
-    put(botRing + j, R * Math.cos(ang), R * Math.sin(ang), 0);
+    const o = outline((j / na) * Math.PI * 2);
+    put(botRing + j, o.x, o.y, 0);
   }
   put(botCenter, 0, 0, 0);
 
