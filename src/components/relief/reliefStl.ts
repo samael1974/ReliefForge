@@ -432,16 +432,23 @@ export async function buildReliefAssemblyGeometry(
         // La cavita' del rilievo deve restare l'apertura piu' grande e APERTA sul
         // retro: se fosse chiusa da entrambi i lati, un rilievo stampato a parte non
         // potrebbe piu' entrare.
+        // V8.16 — BORDINO POSITIVO SUL RETRO.
+        // L'apertura e' PASSANTE e larga quanto il rilievo piu' il gioco: il
+        // bassorilievo si cala dal FRONTE e la sua faccia posteriore va a battere
+        // sulla cornicetta che resta in fondo, dove lo si incolla. Prima il bordino
+        // era ricavato scavando, e stava a meta' spessore: il pezzo non entrava.
         const lipT = lipT0;
-        const frontDepth = hasGlassSeat ? seatD : 0;
-        const cavDepth = Math.max(0.3, frH - frontDepth - lipT);
+        const cavDepth = Math.max(0.3, frH - lipT);
         const cavity = roundedBox(wasm, backInnerW, backInnerH, cavDepth + 1.0, rBack, segs)
-          .translate([0, 0, -frH / 2 + cavDepth / 2 - 0.5]);
+          .translate([0, 0, frH / 2 - cavDepth / 2 + 0.5]);
         frameM = frameM.subtract(cavity);
+
         if (hasGlassSeat) {
-          const glassW = Math.min(backInnerW - 0.2, frontInnerW + 2 * seat);
-          const glassH = Math.min(backInnerH - 0.2, frontInnerH + 2 * seat);
-          const rGlass = Math.max(0, R - frame.solidMm - Math.max(0, lip - seat));
+          // Scasso frontale INDIPENDENTE, piu' largo della cavita': il vetro si cala
+          // dal davanti e batte sullo spallamento che si forma sul fronte.
+          const glassW = Math.min(backInnerW + 2 * frame.solidMm - 0.4, backInnerW + 2 * seat);
+          const glassH = Math.min(backInnerH + 2 * frame.solidMm - 0.4, backInnerH + 2 * seat);
+          const rGlass = Math.max(0, R - frame.solidMm + seat);
           const glassRecess = roundedBox(wasm, glassW, glassH, seatD + 1.0, rGlass, segs)
             .translate([0, 0, frH / 2 - seatD / 2 + 0.5]);
           frameM = frameM.subtract(glassRecess);

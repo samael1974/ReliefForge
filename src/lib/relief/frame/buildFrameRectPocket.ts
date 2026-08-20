@@ -112,9 +112,10 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const hasLedge = lip > 0.01 && lipT < height - 0.2;
   const hasGlassSeat = hasLedge && seat > 0.01 && seatD > 0.01 && seatD + lipT < height - 0.2;
   const seatDepth = hasGlassSeat ? seatD : 0;
-  // Sede vetro: apertura visibile allargata della sovrapposizione del vetro.
-  const wSeat = Math.min(wBack - 0.2, Math.max(0.5, wBack - 2 * lip + 2 * seat));
-  const hSeat = Math.min(hBack - 0.2, Math.max(0.5, hBack - 2 * lip + 2 * seat));
+  // Sede vetro: scasso frontale PIU' LARGO della cavita', cosi' il vetro batte
+  // su uno spallamento sul fronte invece di cadere dentro.
+  const wSeat = Math.min(wBack + 2 * thickness - 0.4, wBack + 2 * seat);
+  const hSeat = Math.min(hBack + 2 * thickness - 0.4, hBack + 2 * seat);
   // V8.4: default 16 segmenti per angolo (era 6): curve lisce anche in anteprima.
   // Il numero di segmenti segue il RAGGIO, non l'angolo: su una cornice tonda il
   // valore fisso storico (16 per angolo = 68 facce) dava corde da oltre 6 mm.
@@ -132,7 +133,7 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const rOuter = R;
   const rBack = Math.max(0, R - thickness);
   const rFront = Math.max(0, R - thickness - lip);
-  const rSeat = Math.max(0, R - thickness - Math.max(0, lip - seat));
+  const rSeat = Math.max(0, R - thickness + seat);
 
   // Perimetri (tutti con lo stesso segPerCorner → index-allineati)
   const perOuter = roundedRectPerimeter(outerW / 2, outerH / 2, rOuter, segPerCorner);
@@ -190,17 +191,18 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
     // Il bordino che sporge verso l'interno regge entrambi, da lati opposti.
     // La cavita' del rilievo resta APERTA sul retro: chiusa da tutti e due i lati,
     // un rilievo stampato a parte non potrebbe piu' entrare.
-    const yLedge = seatDepth + lipT;
-    addRing(perOuter, hasGlassSeat ? perSeat : perFront, y0, false);   // faccia fronte
+    // V8.16 — bordino POSITIVO in fondo: apertura passante, rilievo dal fronte.
+    const yLedge = yH - lipT;
+    addRing(perOuter, hasGlassSeat ? perSeat : perBack, y0, false);  // faccia fronte
     if (hasGlassSeat) {
       addWall(perSeat, y0, seatDepth, false);      // parete della sede vetro
-      addRing(perSeat, perFront, seatDepth, false); // fondo sede vetro: qui appoggia il VETRO
+      addRing(perSeat, perBack, seatDepth, false); // spallamento: qui batte il VETRO
     }
-    addWall(perFront, seatDepth, yLedge, false);   // apertura visibile = spessore del bordino
-    addRing(perBack, perFront, yLedge, true);      // retro del bordino: qui appoggia il RILIEVO
-    addWall(perBack, yLedge, yH, false);           // cavita' del rilievo, aperta sul retro
+    addWall(perBack, seatDepth, yLedge, false);    // cavita' passante del rilievo
+    addRing(perBack, perFront, yLedge, false);     // faccia del bordino: qui appoggia il RILIEVO
+    addWall(perFront, yLedge, yH, false);          // apertura del bordino
     addWall(perOuter, y0, yH, true);               // muro esterno
-    addRing(perOuter, perBack, yH, true);          // faccia posteriore
+    addRing(perOuter, perFront, yH, true);         // faccia posteriore (anello del bordino)
   } else if (hasPocket) {
     addRing(perOuter, perBack, y0, false);         // faccia fronte (apertura vassoio grande)
     addWall(perBack, y0, yLip, false);             // parete del vassoio

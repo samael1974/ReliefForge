@@ -1300,7 +1300,7 @@ export default function Studio() {
                         <Slider label="Sporgenza bordino" value={frameP.lipMm} min={1} max={20} step={0.1} suffix=" mm" onChange={(v) => setFP("lipMm", v)} />
                         <Slider label="Spessore bordino" value={frameP.lipThickMm} min={0.4} max={10} step={0.1} suffix=" mm" onChange={(v) => setFP("lipThickMm", v)} />
                         <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 2 }}>
-                          Il bassorilievo entra <b>dal retro</b> e appoggia su questo bordino, dove lo puoi incollare. La cavità è larga quanto il rilievo più {frameP.reliefGapMm} mm per lato e resta aperta dietro, così il pezzo stampato a parte entra.
+                          Cornicetta <b>fusa</b> alla cornice, in fondo all'apertura. Il bassorilievo si cala <b>dal fronte</b> e la sua faccia posteriore ci appoggia sopra: lì lo incolli. L'apertura è passante e larga quanto il rilievo più {frameP.reliefGapMm} mm per lato.
                         </div>
 
                         <div style={{ borderTop: `1px solid ${C.border}`, margin: "10px 0 8px" }} />
@@ -1311,7 +1311,7 @@ export default function Studio() {
                             <Slider label="Spessore vetro" value={frameP.glassMm} min={2} max={3} step={1} suffix=" mm" onChange={(v) => setFrameP((s) => ({ ...s, glassMm: v as 2 | 3 }))} />
                             <Slider label="Gioco vetro per lato" value={frameP.glassClearanceMm} min={0} max={1} step={0.05} suffix=" mm" onChange={(v) => setFP("glassClearanceMm", v)} />
                             <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: 2 }}>
-                              Scasso frontale <b>indipendente</b> dal bordino: il vetro entra dal fronte e batte sul bordino dal lato opposto al rilievo. Profondità 🔒 {glassSeatDepth.toFixed(2)} mm (spessore + gioco).
+                              Scasso frontale <b>indipendente</b> dal bordino: più largo dell'apertura, così il vetro si cala dal davanti e batte sullo spallamento. Profondità 🔒 {glassSeatDepth.toFixed(2)} mm (spessore + gioco).
                             </div>
                           </>
                         )}
