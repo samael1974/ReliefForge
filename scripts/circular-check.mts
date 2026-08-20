@@ -128,6 +128,33 @@ const rapportoT = (tRett + tCsg) / tA;
 console.log(`   triangoli: B/A = ${rapportoTri.toFixed(2)}x     tempo: B/A = ${rapportoT.toFixed(1)}x`);
 console.log("");
 
+// --------------------------------------------------------------------------
+// ALLINEAMENTO: il rilievo tondo deve occupare lo STESSO posto di quello
+// rettangolare. Se i due mesher centrano il pezzo in modo diverso, in anteprima
+// il disco appare disassato rispetto alla cornice, che invece si posiziona sulle
+// quote del layout.
+// --------------------------------------------------------------------------
+function bbox(pos: ArrayLike<number>, count: number) {
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < count; i++) {
+    const x = pos[i * 3]!, y = pos[i * 3 + 1]!, z = pos[i * 3 + 2]!;
+    if (x < x0) x0 = x; if (x > x1) x1 = x;
+    if (y < y0) y0 = y; if (y > y1) y1 = y;
+    if (z < z0) z0 = z; if (z > z1) z1 = z;
+  }
+  return { x0, x1, y0, y1, z0, z1, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+}
+const bA = bbox(diretta.vertices, diretta.vertices.length / 3);
+const rettPos = (rett.geometry.getAttribute("position") as THREE.BufferAttribute).array as ArrayLike<number>;
+const bR = bbox(rettPos, rettPos.length / 3);
+console.log("ALLINEAMENTO fra i due mesher");
+console.log(`   tondo:        X [${bA.x0.toFixed(2)}, ${bA.x1.toFixed(2)}]  Y [${bA.y0.toFixed(2)}, ${bA.y1.toFixed(2)}]  Z [${bA.z0.toFixed(2)}, ${bA.z1.toFixed(2)}]`);
+console.log(`   rettangolare: X [${bR.x0.toFixed(2)}, ${bR.x1.toFixed(2)}]  Y [${bR.y0.toFixed(2)}, ${bR.y1.toFixed(2)}]  Z [${bR.z0.toFixed(2)}, ${bR.z1.toFixed(2)}]`);
+check(Math.abs(bA.cx - bR.cx) < 0.01, `stesso centro in X (${bA.cx.toFixed(2)} vs ${bR.cx.toFixed(2)})`);
+check(Math.abs(bA.cy - bR.cy) < 0.01, `stesso centro in Y (${bA.cy.toFixed(2)} vs ${bR.cy.toFixed(2)})`);
+check(Math.abs(bA.z0 - bR.z0) < 0.01, `stessa quota di base in Z (${bA.z0.toFixed(2)} vs ${bR.z0.toFixed(2)})`);
+console.log("");
+
 check(apertiA === 0, "A: mesh chiusa (watertight per costruzione)");
 check(bordoA.scarto < 0.01, `A: bordo circolare esatto (scarto ${bordoA.scarto.toFixed(4)} mm)`);
 check(diretta.triangles > 1000, `A: risoluzione sensata (${diretta.triangles} triangoli)`);
