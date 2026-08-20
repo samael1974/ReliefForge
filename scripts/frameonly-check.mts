@@ -183,9 +183,32 @@ check(con.length > senza.length, `un gradino in piu' con la sede vetro (${senza.
 const vassoio = Math.max(...senza);
 check(con.some((v) => Math.abs(v - vassoio) < 0.15), `il vassoio del rilievo non si e' spostato (${vassoio} mm)`);
 
-// Il labbro deve stringere l'apertura di esattamente SEAT per lato.
-const labbroAtteso = vassoio - SEAT;
-check(con.some((v) => Math.abs(v - labbroAtteso) < 0.15), `labbro a ${labbroAtteso.toFixed(1)} mm dall'asse (stretto di ${SEAT} mm per lato)`);
+// MONTAGGIO: il vetro entra dal fronte e appoggia sul bordino; la sua sede e'
+// l'apertura visibile allargata della sovrapposizione dichiarata.
+const visibile = Math.min(...senza);
+const sedeAttesa = visibile + SEAT;
+check(con.some((v) => Math.abs(v - sedeAttesa) < 0.15), `sede vetro a r=${sedeAttesa.toFixed(1)} mm (visibile ${visibile} + ${SEAT} di sovrapposizione)`);
+
+// La cavita' del rilievo deve restare la piu' grande E aperta sul retro: se fosse
+// piu' stretta di una delle due facce, un rilievo stampato a parte non entrerebbe.
+check(Math.max(...con) === vassoio, `la cavita' del rilievo resta l'apertura piu' grande (${vassoio} mm)`);
+
+{
+  const g = await cornice(SEAT, SEAT_D);
+  const pos = g.getAttribute("position");
+  let zMin = Infinity, zMax = -Infinity;
+  for (let i = 0; i < pos.count; i++) { const z = pos.getZ(i); if (z < zMin) zMin = z; if (z > zMax) zMax = z; }
+  let rRetro = Infinity, rFronte = Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i), ax = Math.abs(pos.getX(i));
+    if (Math.abs(z - zMin) < 0.05 && ax < rRetro) rRetro = ax;
+    if (Math.abs(z - zMax) < 0.05 && ax < rFronte) rFronte = ax;
+  }
+  const r1 = Math.round(rRetro * 10) / 10, r2 = Math.round(rFronte * 10) / 10;
+  console.log(`  apertura sulla faccia retro ${r1} mm, sul fronte ${r2} mm`);
+  check(Math.abs(r1 - vassoio) < 0.15, `il retro e' aperto quanto la cavita' (${r1} mm): il rilievo entra da dietro`);
+  check(r2 < r1, `il fronte e' piu' stretto del retro (${r2} < ${r1}): il vetro non cade in avanti`);
+}
 
 // Spento deve restare identico a prima: chi stampa gia' non deve vedere differenze.
 check(senza.length === 2, `con la sede spenta la cornice resta a due soli raggi (${senza.join(', ')})`);
@@ -273,12 +296,12 @@ console.log(`  raggi presenti: ${listaRaggi.join(", ")} mm`);
 console.log(`  triangoli: ${triTonda}`);
 
 const rVassoio = (DIAMETRO + 2 * (3.0 + 0.3)) / 2;
-const rLabbro = rVassoio - SEAT;
+const rSedeVetro = rVassoio - 3.0 + SEAT; // visibile + sovrapposizione
 const rApertura = rVassoio - 3.0;
 
 check(listaRaggi.some((v) => Math.abs(v - rVassoio) < 0.15), `vassoio del rilievo a r=${rVassoio.toFixed(1)} mm`);
-check(listaRaggi.some((v) => Math.abs(v - rApertura) < 0.15), `battuta del rilievo a r=${rApertura.toFixed(1)} mm (gradino piu' profondo)`);
-check(listaRaggi.some((v) => Math.abs(v - rLabbro) < 0.15), `labbro del vetro a r=${rLabbro.toFixed(1)} mm`);
+check(listaRaggi.some((v) => Math.abs(v - rApertura) < 0.15), `apertura visibile a r=${rApertura.toFixed(1)} mm (bordino di appoggio)`);
+check(listaRaggi.some((v) => Math.abs(v - rSedeVetro) < 0.15), `sede vetro a r=${rSedeVetro.toFixed(1)} mm`);
 
 // Corda = circonferenza / numero di facce. Sopra i 2 mm il poligono si vede.
 const corda = (2 * Math.PI * rEsterno) / Math.max(1, facceEsterne / 2);

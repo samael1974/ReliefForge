@@ -37,6 +37,7 @@ type FrameUI = {
   /** Battuta vetro frontale: larghezza radiale del labbro e suo spessore. */
   glassSeatMm?: number;
   glassSeatDepthMm?: number;
+  lipThickMm?: number;
   /** Gioco per lato tra rilievo e apertura cornice (mm) — solo assemblaggio separato */
   reliefGapMm?: number;
 };
@@ -284,6 +285,7 @@ function ReliefPreview3DScene({
       cornerRadiusMm: frame.cornerRadiusMm ?? 0,
       glassSeatMm: frame.glassSeatMm ?? 0,
       glassSeatDepthMm: frame.glassSeatDepthMm ?? 0,
+      lipThickMm: frame.lipThickMm ?? 1.6,
     });
     const vertices = (out as any)?.vertices ?? ((out as any)?.[0] as Float32Array | undefined);
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);

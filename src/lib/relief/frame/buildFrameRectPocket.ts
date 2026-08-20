@@ -35,8 +35,10 @@ export type FrameRectPocketParams = {
   /** Battuta VETRO frontale: larghezza radiale del labbro che trattiene il vetro.
    *  0 = niente sede vetro (comportamento storico: un gradino solo). */
   glassSeatMm?: number;
-  /** Spessore lungo Y del labbro che trattiene il vetro (materiale davanti al vetro). */
+  /** Profondita' della sede vetro dal fronte (di norma spessore vetro + gioco). */
   glassSeatDepthMm?: number;
+  /** Spessore del bordino su cui appoggiano vetro e rilievo. */
+  lipThickMm?: number;
   /** Raggio di arrotondamento spigoli verticali esterni (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
   /** Segmenti per ciascun angolo a 90° (qualità della curva). Default 6 */
@@ -105,9 +107,11 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   // che altrimenti andrebbe solo incollato sul fronte del rilievo.
   const seat = Math.max(0, p.glassSeatMm ?? 0);
   const seatD = Math.max(0, p.glassSeatDepthMm ?? 0);
-  const hasSeat = hasPocket && seat > 0.01 && seatD > 0.01 && seatD < pocketDepth - 0.05;
-  const wSeat = Math.max(0.5, wBack - 2 * seat);
-  const hSeat = Math.max(0.5, hBack - 2 * seat);
+  const lipT = Math.max(0.4, p.lipThickMm ?? 1.6);
+  const hasSeat = lip > 0 && seat > 0.01 && seatD > 0.01 && seatD + lipT < height - 0.2;
+  // Sede vetro: apertura visibile allargata della sovrapposizione del vetro.
+  const wSeat = Math.min(wBack - 0.2, Math.max(0.5, wBack - 2 * lip + 2 * seat));
+  const hSeat = Math.min(hBack - 0.2, Math.max(0.5, hBack - 2 * lip + 2 * seat));
   // V8.4: default 16 segmenti per angolo (era 6): curve lisce anche in anteprima.
   // Il numero di segmenti segue il RAGGIO, non l'angolo: su una cornice tonda il
   // valore fisso storico (16 per angolo = 68 facce) dava corde da oltre 6 mm.
@@ -125,7 +129,7 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const rOuter = R;
   const rBack = Math.max(0, R - thickness);
   const rFront = Math.max(0, R - thickness - lip);
-  const rSeat = Math.max(0, R - thickness - seat);
+  const rSeat = Math.max(0, R - thickness - Math.max(0, lip - seat));
 
   // Perimetri (tutti con lo stesso segPerCorner → index-allineati)
   const perOuter = roundedRectPerimeter(outerW / 2, outerH / 2, rOuter, segPerCorner);
@@ -179,15 +183,19 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   };
 
   if (hasSeat) {
-    // Scaletta a due gradini: labbro vetro -> sede vetro -> vassoio -> battuta rilievo.
-    addRing(perOuter, perSeat, y0, false);         // faccia fronte, ristretta dal labbro vetro
-    addWall(perSeat, y0, seatD, false);            // spessore del labbro vetro
-    addRing(perBack, perSeat, seatD, true);        // gradino: qui batte il VETRO
-    addWall(perBack, seatD, yLip, false);          // parete del vassoio
-    addRing(perBack, perFront, yLip, false);       // battuta: qui appoggia il RILIEVO
-    addWall(perFront, yLip, yH, false);            // apertura visibile piccola
+    // MONTAGGIO REALE (V8.13): vetro dal FRONTE nella sede a L, rilievo dal RETRO.
+    // Il bordino che sporge verso l'interno regge entrambi, da lati opposti.
+    // La cavita' del rilievo resta APERTA sul retro: chiusa da tutti e due i lati,
+    // un rilievo stampato a parte non potrebbe piu' entrare.
+    const yLedge = seatD + lipT;
+    addRing(perOuter, perSeat, y0, false);         // faccia fronte
+    addWall(perSeat, y0, seatD, false);            // parete della sede vetro
+    addRing(perSeat, perFront, seatD, false);      // fondo sede vetro: qui appoggia il VETRO
+    addWall(perFront, seatD, yLedge, false);       // apertura visibile = spessore del bordino
+    addRing(perBack, perFront, yLedge, true);      // retro del bordino: qui appoggia il RILIEVO
+    addWall(perBack, yLedge, yH, false);           // cavita' del rilievo, aperta sul retro
     addWall(perOuter, y0, yH, true);               // muro esterno
-    addRing(perOuter, perFront, yH, true);         // faccia posteriore
+    addRing(perOuter, perBack, yH, true);          // faccia posteriore
   } else if (hasPocket) {
     addRing(perOuter, perBack, y0, false);         // faccia fronte (apertura vassoio grande)
     addWall(perBack, y0, yLip, false);             // parete del vassoio
