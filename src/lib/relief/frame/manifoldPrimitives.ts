@@ -6,6 +6,20 @@
 /** Segmenti per angolo a 90 gradi. 24 = curve lisce anche con raggi grandi (12mm+). */
 export const FRAME_CORNER_SEGMENTS = 24;
 
+/** Lunghezza di corda desiderata sulle curve (mm). Su un raggio d'angolo di pochi
+ *  millimetri 24 segmenti bastano; su una cornice TONDA da 136 mm gli stessi 24
+ *  producono corde da 6 mm, cioe' un poligono ben visibile. Il numero di segmenti
+ *  va quindi con il raggio, non con l'angolo. */
+export const TARGET_CHORD_MM = 1.5;
+/** Tetto di sicurezza: oltre non si guadagna nulla di visibile e il CSG rallenta. */
+export const MAX_SEGMENTS_360 = 360;
+
+/** Segmenti su 360 gradi per un raggio dato, mai meno del minimo storico. */
+export function segmentsForRadius(radiusMm: number, minSegments360: number): number {
+  const byChord = Math.ceil((2 * Math.PI * Math.max(0, radiusMm)) / TARGET_CHORD_MM);
+  return Math.max(minSegments360, Math.min(MAX_SEGMENTS_360, byChord));
+}
+
 /**
  * Box manifold estruso lungo Z, centrato sull'origine, con angoli (XY) eventualmente arrotondati.
  * r <= 0 -> cubo a spigoli vivi (veloce). r > 0 -> rounded-rect via CrossSection.offset('Round').
@@ -26,7 +40,7 @@ export function roundedBox(
   if (rr <= 0.01) return wasm.Manifold.cube([w, h, depth], true);
   const coreW = Math.max(0.01, w - 2 * rr);
   const coreH = Math.max(0.01, h - 2 * rr);
-  const segs360 = Math.max(16, Math.round(cornerSegments) * 4);
+  const segs360 = segmentsForRadius(rr, Math.max(16, Math.round(cornerSegments) * 4));
   const cs = wasm.CrossSection.square([coreW, coreH], true).offset(rr, "Round", 2, segs360);
   return cs.extrude(depth, 0, 0, [1, 1], true);
 }

@@ -231,6 +231,60 @@ console.log(`  anteprima con  sede: ${antCon.join(", ")} mm   (export: ${con.joi
 check(antSenza.join() === senza.join(), "senza sede vetro: anteprima ed export coincidono");
 check(antCon.join() === con.join(), "con sede vetro: anteprima ed export coincidono");
 
+
+// ---------------------------------------------------------------------------
+// CORNICE TONDA: i gradini ci sono anche in tondo? e quante facce ha il cerchio?
+// Su un cerchio i raggi si misurano dall'asse, non sull'asse X: sul tondo i
+// vertici hanno |x| che varia con continuita' e non formerebbe livelli.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("CORNICE TONDA — gradini e sfaccettatura");
+console.log("");
+
+const tondaSeat = await buildReliefAssemblyGeometry({
+  hm: aperturaPiatta(DIAMETRO, DIAMETRO),
+  widthMm: DIAMETRO, depthMm: 4, baseMm: 3,
+  outputMode: "relief", baseStyle: "flat", frameOnly: true,
+  frame: {
+    solidMm: BORDO, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
+    lipMm: 3.0, pocketDepthMm: 3.6, cornerRadiusMm: 1e6, reliefGapMm: 0.3,
+    glassSeatMm: SEAT, glassSeatDepthMm: SEAT_D,
+  },
+  mat: null,
+} as any);
+
+const tp = tondaSeat.geometry.getAttribute("position");
+tondaSeat.geometry.computeBoundingBox();
+const tbb = tondaSeat.geometry.boundingBox!;
+const cx = (tbb.max.x + tbb.min.x) / 2;
+const cy = (tbb.max.y + tbb.min.y) / 2;
+
+const raggi = new Set<number>();
+let facceEsterne = 0;
+const rEsterno = (DIAMETRO + 2 * (BORDO + 3.0 + 0.3)) / 2;
+for (let i = 0; i < tp.count; i++) {
+  const r = Math.hypot(tp.getX(i) - cx, tp.getY(i) - cy);
+  raggi.add(Math.round(r * 10) / 10);
+  if (Math.abs(r - rEsterno) < 0.15) facceEsterne++;
+}
+const listaRaggi = [...raggi].sort((a, b) => a - b);
+const triTonda = tondaSeat.geometry.index ? tondaSeat.geometry.index.count / 3 : tp.count / 3;
+console.log(`  raggi presenti: ${listaRaggi.join(", ")} mm`);
+console.log(`  triangoli: ${triTonda}`);
+
+const rVassoio = (DIAMETRO + 2 * (3.0 + 0.3)) / 2;
+const rLabbro = rVassoio - SEAT;
+const rApertura = rVassoio - 3.0;
+
+check(listaRaggi.some((v) => Math.abs(v - rVassoio) < 0.15), `vassoio del rilievo a r=${rVassoio.toFixed(1)} mm`);
+check(listaRaggi.some((v) => Math.abs(v - rApertura) < 0.15), `battuta del rilievo a r=${rApertura.toFixed(1)} mm (gradino piu' profondo)`);
+check(listaRaggi.some((v) => Math.abs(v - rLabbro) < 0.15), `labbro del vetro a r=${rLabbro.toFixed(1)} mm`);
+
+// Corda = circonferenza / numero di facce. Sopra i 2 mm il poligono si vede.
+const corda = (2 * Math.PI * rEsterno) / Math.max(1, facceEsterne / 2);
+console.log(`  corda sul cerchio esterno: ~${corda.toFixed(2)} mm`);
+check(corda < 2.0, `curva liscia: corda ${corda.toFixed(2)} mm sotto i 2 mm`);
+
 console.log(fail ? `\n❌ ${fail} controllo/i fallito/i.` : "\n✅ tutti i controlli superati");
 // Niente process.exit(): il WASM di manifold ha ancora handle aperti e libuv
 // aborta con un assertion, facendo fallire la CI anche quando i controlli passano.

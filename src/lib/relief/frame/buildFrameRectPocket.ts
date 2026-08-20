@@ -17,6 +17,8 @@
 // Quando pocketDepthMm o lipMm ≤ 0 → scatola cava simmetrica (fallback safe).
 // Quando cornerRadiusMm ≤ 0 → spigoli vivi (perimetri a 4 punti).
 
+import { segmentsForRadius } from "./manifoldPrimitives";
+
 export type FrameRectPocketParams = {
   /** Apertura del VASSOIO frontale in X — contiene il vetro */
   innerWmm: number;
@@ -107,7 +109,13 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const wSeat = Math.max(0.5, wBack - 2 * seat);
   const hSeat = Math.max(0.5, hBack - 2 * seat);
   // V8.4: default 16 segmenti per angolo (era 6): curve lisce anche in anteprima.
-  const segPerCorner = R > 0.01 ? Math.max(1, p.cornerSegments ?? 16) : 0;
+  // Il numero di segmenti segue il RAGGIO, non l'angolo: su una cornice tonda il
+  // valore fisso storico (16 per angolo = 68 facce) dava corde da oltre 6 mm.
+  // Tutti i perimetri devono condividere lo stesso valore: sono index-allineati.
+  const rOuterEff = Math.min(R, outerW / 2, outerH / 2);
+  const segPerCorner = R > 0.01
+    ? Math.max(1, p.cornerSegments ?? 16, Math.ceil(segmentsForRadius(rOuterEff, 64) / 4))
+    : 0;
 
   const y0 = 0;
   const yH = height;
