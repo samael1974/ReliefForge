@@ -28,7 +28,7 @@ type DownloadArgs = {
 /** V8.5: mesher adattivo se e' stata indicata una tolleranza, altrimenti griglia uniforme.
  *  L'adattivo mette i triangoli dove c'e' dettaglio: su un ritratto 90 mm sono ~30x meno
  *  triangoli a parita' di resa, e il CSG manifold di conseguenza e' molto piu' rapido. */
-function buildReliefSolid(a: {
+export function buildReliefSolid(a: {
   hm: HeightmapState; widthMm: number; depthMm: number; baseMm: number;
   baseStyle: BaseStyle; toleranceMm?: number;
 }) {
@@ -199,7 +199,7 @@ function downloadArrayBuffer(buffer: ArrayBuffer, fileName: string) {
 
 // --- Manifold: motore CSG robusto (WASM). Fonde anche il rilievo ad alta densità in un solido chiuso. ---
 let _manifoldWasm: any = null;
-async function getManifold(): Promise<any> {
+export async function getManifold(): Promise<any> {
   if (_manifoldWasm) return _manifoldWasm;
   // Vite non trova il .wasm da solo: gli passiamo l'URL esplicito con locateFile.
   const [mod, wasmUrlMod] = await Promise.all([
@@ -214,7 +214,7 @@ async function getManifold(): Promise<any> {
   return wasm;
 }
 
-function geomToManifold(wasm: any, geom: THREE.BufferGeometry): any {
+export function geomToManifold(wasm: any, geom: THREE.BufferGeometry): any {
   // Manifold richiede vertici SALDATI (ogni bordo condiviso da 2 triangoli). Le geometrie THREE
   // hanno vertici duplicati ai bordi → vanno saldati PER POSIZIONE (ignorando normali/uv).
   const src = geom.index ? geom.toNonIndexed() : geom;
@@ -227,7 +227,7 @@ function geomToManifold(wasm: any, geom: THREE.BufferGeometry): any {
   return new wasm.Manifold(mesh);
 }
 
-function manifoldToGeom(man: any): THREE.BufferGeometry {
+export function manifoldToGeom(man: any): THREE.BufferGeometry {
   const mesh = man.getMesh();
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(mesh.vertProperties), 3));

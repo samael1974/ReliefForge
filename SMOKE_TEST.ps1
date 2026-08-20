@@ -21,6 +21,7 @@ if (-not $SoloApp) {
         "Curva tonale"               = { pnpm curve:check }
         "Invarianza STL"             = { pnpm stl:check }
         "Sola cornice"               = { pnpm frameonly:check }
+        "Rilievo circolare"          = { pnpm circular:check }
     }
     $i = 0
     foreach ($k in $passi.Keys) {

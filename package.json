@@ -13,6 +13,7 @@
     "adaptive:check": "node scripts/run-assembly-check.mjs scripts/adaptive-check.mts",
     "stl:check": "node scripts/run-assembly-check.mjs scripts/stl-check.mts",
     "frameonly:check": "node scripts/run-assembly-check.mjs scripts/frameonly-check.mts",
+    "circular:check": "node scripts/run-assembly-check.mjs scripts/circular-check.mts",
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",

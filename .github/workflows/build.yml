@@ -36,6 +36,8 @@ jobs:
         run: pnpm stl:check
       - name: Sola cornice (progetto senza bassorilievo)
         run: pnpm frameonly:check
+      - name: Bassorilievo circolare (mesh tonda vs booleana)
+        run: pnpm circular:check
 
   windows:
     needs: checks
