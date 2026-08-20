@@ -117,13 +117,16 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
 
   const zAt = (rNorm: number, ang: number): number => {
     let px: number, py: number;
+    // Le righe dell'immagine crescono verso il BASSO, la Y del pezzo verso l'ALTO:
+    // senza il segno meno il bassorilievo esce capovolto rispetto alla depth map.
+    // Il mesher rettangolare usa gia' questa convenzione.
     if (rectMode) {
       const o = outline(ang);
       px = cx + (o.x * rNorm / halfW) * ((w - 1) / 2);
-      py = cy + (o.y * rNorm / halfH) * ((h - 1) / 2);
+      py = cy - (o.y * rNorm / halfH) * ((h - 1) / 2);
     } else {
       px = cx + rNorm * halfPx * Math.cos(ang);
-      py = cy + rNorm * halfPx * Math.sin(ang);
+      py = cy - rNorm * halfPx * Math.sin(ang);
     }
     let v = sampleBilinear(height01, w, h, px, py);
     if (input.invert) v = 1 - v;

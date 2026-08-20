@@ -233,5 +233,50 @@ console.log("");
   check(Math.abs(bb.y0 + bb.y1) < 0.01, "la mesh esce centrata sull'origine: l'anteprima DEVE ri-ancorarla come l'export");
 }
 
+
+// ---------------------------------------------------------------------------
+// ORIENTAMENTO. I due mesher devono mappare la stessa riga dell'immagine sullo
+// stesso lato del pezzo. Si usa una heightmap asimmetrica: alta in ALTO a
+// SINISTRA dell'immagine, piatta altrove, e si guarda dove finisce il rilievo.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("ORIENTAMENTO DEI DUE MESHER");
+console.log("");
+{
+  const marker = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // riga 0 = ALTO dell'immagine, colonna 0 = SINISTRA
+      if (y < H * 0.3 && x < W * 0.3) marker[y * W + x] = 1;
+    }
+  }
+  /** Baricentro (X,Y) dei vertici piu' alti in Z: dove sta il rilievo. */
+  const dove = (verts: ArrayLike<number>, n: number) => {
+    let zMax = -Infinity;
+    for (let i = 0; i < n; i++) zMax = Math.max(zMax, verts[i * 3 + 2]!);
+    let sx = 0, sy = 0, k = 0;
+    for (let i = 0; i < n; i++) {
+      if (verts[i * 3 + 2]! > zMax - 0.05) { sx += verts[i * 3]!; sy += verts[i * 3 + 1]!; k++; }
+    }
+    return { x: sx / Math.max(1, k), y: sy / Math.max(1, k) };
+  };
+  const r = buildSolidFromHeightmap({
+    height01: marker, width: W, height: H,
+    outWidthMm: DIAMETRO, depthMm: DEPTH, baseMm: BASE, baseStyle: "flat",
+  });
+  const rp = (r.geometry.getAttribute("position") as THREE.BufferAttribute).array as ArrayLike<number>;
+  const dr = dove(rp, rp.length / 3);
+  const c = buildCircularSolidFromHeightmap({
+    height01: marker, width: W, height: H,
+    outDiameterMm: DIAMETRO, outWidthMm: DIAMETRO, outHeightMm: DIAMETRO, cornerRadiusMm: 0,
+    depthMm: DEPTH, baseMm: BASE, maxCells: 120_000,
+  });
+  const dc = dove(c.vertices, c.vertices.length / 3);
+  console.log(`   rettangolare: rilievo a X ${dr.x.toFixed(1)}  Y ${dr.y.toFixed(1)}`);
+  console.log(`   tondo:        rilievo a X ${dc.x.toFixed(1)}  Y ${dc.y.toFixed(1)}`);
+  check(Math.sign(dr.x) === Math.sign(dc.x), `stesso lato in X (${Math.sign(dr.x)} vs ${Math.sign(dc.x)})`);
+  check(Math.sign(dr.y) === Math.sign(dc.y), `stesso lato in Y (${Math.sign(dr.y)} vs ${Math.sign(dc.y)})`);
+}
+
 console.log(fail ? `❌ ${fail} controllo/i fallito/i.` : "✅ tutti i controlli superati");
 process.exitCode = fail ? 1 : 0;
