@@ -123,6 +123,12 @@ console.log("");
   const eV = outlineExtent(vivo), eT = outlineExtent(tondo);
   console.log(`  esagono spigoli vivi ${vivo.length} punti ${eV.w.toFixed(1)}x${eV.h.toFixed(1)} — arrotondato ${tondo.length} punti ${eT.w.toFixed(1)}x${eT.h.toFixed(1)}`);
   check(tondo.length > vivo.length * 3, `l'arrotondamento aggiunge punti (${vivo.length} -> ${tondo.length})`);
+  // La finezza degli archi deve dipendere dalla CORDA, non dal numero di lati:
+  // legandola a quello, un ottagono usciva con archi da 2 soli segmenti.
+  const ott = outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 8, cornerRadiusMm: 10 }, 8);
+  const perArco = ott.length / 8;
+  console.log(`  ottagono r=10 chiesto con soli 8 punti: ${ott.length} punti, ${perArco.toFixed(0)} per arco`);
+  check(perArco >= 8, `archi lisci a prescindere dai punti richiesti (${perArco.toFixed(0)} per arco)`);
   check(eT.h < eV.h - 0.5, `gli angoli sono smussati davvero (altezza ${eV.h.toFixed(1)} -> ${eT.h.toFixed(1)})`);
   const r = larghezzaBordo({ kind: "polygon", halfW: 60, halfH: 60, sides: 6, cornerRadiusMm: 10 }, D, 128);
   console.log(`  esagono arrotondato: bordo ${r.min.toFixed(3)}–${r.max.toFixed(3)} mm`);

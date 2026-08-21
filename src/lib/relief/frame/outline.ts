@@ -77,7 +77,9 @@ export function outlinePoints(spec: OutlineSpec, segments: number): Pt2[] {
     }
 
     // Angoli arrotondati: ogni vertice diventa un arco tangente ai due lati.
-    const segArco = Math.max(2, Math.round(n / (k * 2)));
+    // I segmenti dell'arco dipendono dalla CORDA, non dal numero di punti del
+    // poligono: legandoli a quello, un ottagono dava archi da 2 segmenti.
+    const CORDA_MM = 0.8;
     for (let i = 0; i < k; i++) {
       const prev = V[(i - 1 + k) % k]!, cur = V[i]!, next = V[(i + 1) % k]!;
       const d1 = versore(prev.x - cur.x, prev.z - cur.z);
@@ -102,6 +104,7 @@ export function outlinePoints(spec: OutlineSpec, segments: number): Pt2[] {
       let delta = a2 - a1;
       while (delta > Math.PI) delta -= TAU;
       while (delta < -Math.PI) delta += TAU;
+      const segArco = Math.max(3, Math.min(64, Math.ceil((Math.abs(delta) * rEff) / CORDA_MM)));
       for (let j = 0; j <= segArco; j++) {
         const a = a1 + (j / segArco) * delta;
         push(c.x + rEff * Math.cos(a), c.z + rEff * Math.sin(a));

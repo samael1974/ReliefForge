@@ -420,9 +420,14 @@ export default function Studio() {
   // clampa il raggio a w/2, quindi un raggio enorme rende tondo OGNI pezzo
   // (cornice, battuta, vetro, veletta) alla propria misura, senza codice nuovo.
   const effShape: ProjectShape = shape;
-  const openingH = effShape === "rect" || effShape === "ellipse" || effShape === "polygon"
-    ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm)
-    : widthMm;
+  // Ellisse e poligoni hanno l'altezza LIBERA anche con un'immagine caricata:
+  // derivandola dalle proporzioni del rilievo, su una foto quadrata l'ellisse
+  // diventava per forza un cerchio e i comandi sparivano.
+  const openingH = effShape === "ellipse" || effShape === "polygon"
+    ? openingHmm
+    : effShape === "rect"
+      ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm)
+      : widthMm;
   // Diametro del rilievo tondo: solo quando c'e' davvero un rilievo da ritagliare.
   const reliefDiameter = effShape === "circle" && hmState ? widthMm : undefined;
   // Il rilievo segue il raggio della cornice, rientrato dello spessore del bordo:
@@ -1332,9 +1337,7 @@ export default function Studio() {
                       </div>
                       <Slider label="Rotazione" value={polyRotDeg} min={0} max={180} step={1} suffix="°" onChange={setPolyRotDeg} />
                       <Slider label="Larghezza fra i vertici" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                      {!hmState && (
-                        <Slider label="Altezza fra i vertici" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
-                      )}
+                      <Slider label="Altezza fra i vertici" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
                       <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
                         Il poligono è <b>inscritto</b>: le misure sono le distanze fra vertici opposti, i lati stanno più internamente. Con <b>4 lati</b> e le due misure diverse ottieni un <b>rombo</b>.
                       </div>
@@ -1347,9 +1350,7 @@ export default function Studio() {
                   ) : effShape === "ellipse" ? (
                     <>
                       <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                      {!hmState && (
-                        <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
-                      )}
+                      <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
                       <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
                         Il bordo mantiene <b>larghezza costante</b> lungo tutta l'ellisse: non è una scalatura, che lo assottiglierebbe alle estremità dell'asse maggiore.
                       </div>
