@@ -147,7 +147,14 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const spec: OutlineSpec = p.outline
     ? { ...p.outline, halfW: wBack / 2, halfH: hBack / 2 }
     : { kind: "rect", halfW: wBack / 2, halfH: hBack / 2, cornerRadiusMm: rBack };
-  const segTot = Math.max(8, segPerCorner * 4);
+  // Il numero di segmenti non puo' venire dal raggio d'angolo: su ellissi e
+  // poligoni quel raggio e' zero, e l'ellisse usciva con 8 lati.
+  const kindSpec = p.outline?.kind ?? "rect";
+  const segTot = kindSpec === "polygon"
+    ? Math.max(3, Math.round(p.outline?.sides ?? 6))
+    : kindSpec === "ellipse"
+      ? segmentsForRadius(Math.max(wBack, hBack) / 2, 96)
+      : Math.max(8, segPerCorner * 4);
   const perBack = outlinePoints(spec, segTot);
   const perOuter = insetOutline(perBack, -thickness);
   const perFront = hasPocket ? insetOutline(perBack, lip) : perBack;

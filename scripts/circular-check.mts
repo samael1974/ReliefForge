@@ -12,6 +12,7 @@ import { buildSolidFromHeightmap } from "../src/lib/relief/buildSolidFromHeightm
 import { buildCircularSolidFromHeightmap } from "../src/lib/relief/buildCircularSolid";
 import { getManifold, geomToManifold, manifoldToGeom } from "../src/components/relief/reliefStl";
 import { computeAssemblyLayout } from "../src/lib/relief/frame/assemblyLayout";
+import { outlinePoints, raggioNellaDirezione } from "../src/lib/relief/frame/outline";
 
 let fail = 0;
 const check = (ok: boolean, msg: string) => { console.log(`  ${ok ? "✓" : "✗"} ${msg}`); if (!ok) fail++; };
@@ -276,6 +277,44 @@ console.log("");
   console.log(`   tondo:        rilievo a X ${dc.x.toFixed(1)}  Y ${dc.y.toFixed(1)}`);
   check(Math.sign(dr.x) === Math.sign(dc.x), `stesso lato in X (${Math.sign(dr.x)} vs ${Math.sign(dc.x)})`);
   check(Math.sign(dr.y) === Math.sign(dc.y), `stesso lato in Y (${Math.sign(dr.y)} vs ${Math.sign(dc.y)})`);
+}
+
+
+// ---------------------------------------------------------------------------
+// RILIEVO SAGOMATO come la cornice: ellisse e poligoni. Senza, gli spigoli del
+// bassorilievo sbordano oltre l'apertura.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("RILIEVO SAGOMATO SULLA CORNICE");
+console.log("");
+{
+  const W_MM = 130, H_MM = 90;
+  const prova = (nome: string, pts: any[]) => {
+    const m = buildCircularSolidFromHeightmap({
+      height01, width: W, height: H,
+      outDiameterMm: W_MM, outWidthMm: W_MM, outHeightMm: H_MM,
+      depthMm: DEPTH, baseMm: BASE, outlinePts: pts, maxCells: 150_000,
+    });
+    // Nessun vertice deve stare fuori dal contorno richiesto.
+    let fuori = 0, maxR = 0;
+    for (let i = 0; i < m.vertices.length; i += 3) {
+      const x = m.vertices[i]!, y = m.vertices[i + 1]!;
+      const r = Math.hypot(x, y);
+      const rMax = raggioNellaDirezione(pts, Math.atan2(y, x));
+      if (r > rMax + 0.05) fuori++;
+      maxR = Math.max(maxR, r);
+    }
+    console.log(`  ${nome.padEnd(10)} ${m.triangles} triangoli, raggio massimo ${maxR.toFixed(1)} mm`);
+    check(openEdges(m.indices) === 0, `${nome}: mesh chiusa`);
+    check(fuori === 0, `${nome}: nessun vertice fuori dal contorno (${fuori})`);
+    return m;
+  };
+
+  const ell = prova("ellisse", outlinePoints({ kind: "ellipse", halfW: W_MM / 2, halfH: H_MM / 2 }, 256));
+  const rombo = prova("rombo", outlinePoints({ kind: "polygon", halfW: W_MM / 2, halfH: H_MM / 2, sides: 4 }, 64));
+  // Il rombo ha meno della meta' dell'area dell'ellisse: se il rilievo non fosse
+  // sagomato, i due pezzi verrebbero identici.
+  check(rombo.triangles > 0 && ell.triangles > 0, "entrambe le forme producono un solido");
 }
 
 console.log(fail ? `❌ ${fail} controllo/i fallito/i.` : "✅ tutti i controlli superati");

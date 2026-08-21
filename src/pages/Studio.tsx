@@ -427,6 +427,16 @@ export default function Studio() {
   const frameOutlineKindRaw: "rect" | "ellipse" | "polygon" =
     effShape === "ellipse" ? "ellipse" : effShape === "polygon" ? "polygon" : "rect";
 
+  /** Contorno del rilievo: lo stesso della cornice, cosi' il bassorilievo viene
+   *  sagomato invece di sbordare con gli spigoli. */
+  const reliefOutlinePts = useMemo(() => {
+    if (!hmState || frameOutlineKindRaw === "rect") return undefined;
+    return outlinePoints({
+      kind: frameOutlineKindRaw, halfW: widthMm / 2, halfH: openingH / 2,
+      sides: polySides, rotationDeg: polyRotDeg,
+    }, 256);
+  }, [hmState, frameOutlineKindRaw, widthMm, openingH, polySides, polyRotDeg]);
+
   /** Su forme molto acute un bordino largo fa ripiegare il contorno interno.
    *  Si verifica sul contorno vero, non a stima. */
   const bordinoValido = useMemo(() => {
@@ -774,7 +784,7 @@ export default function Studio() {
       const hm = prepareExportHeightmap();
       if (!hm) return;
       const { triangles } = downloadReliefStlBinary({
-        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
+        hm, widthMm, depthMm, baseMm, toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR, reliefOutlinePts,
         outputMode: "relief" as any, baseStyle: "flat" as any, fileName: "reliefforge",
       });
       // Conteggio REALE: con la mesh adattiva la stima sulla griglia sbagliava di
@@ -792,7 +802,7 @@ export default function Studio() {
       if (!hm) return;
       const res = await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
-        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
+        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR, reliefOutlinePts,
         fileName: "reliefforge-cornice", reliefZmm: reliefZ, matZmm: matZ,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -820,7 +830,7 @@ export default function Studio() {
       if (!hm) return;
       await downloadReliefAssemblyStl({
         hm, widthMm, depthMm, baseMm, outputMode: "relief" as any, baseStyle: "flat" as any,
-        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
+        toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR, reliefOutlinePts,
         fileName: "reliefforge-cornice-sola", reliefZmm: reliefZ, matZmm: matZ, frameOnly: true,
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
@@ -858,7 +868,7 @@ export default function Studio() {
     const { geometry } = buildReliefSolid({
       hm,
       widthMm: Math.max(1, widthMm), depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
-      baseStyle: "flat", toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR,
+      baseStyle: "flat", toleranceMm: exportToleranceMm, circularDiameterMm: reliefDiameter, reliefCornerRadiusMm: reliefCornerR, reliefOutlinePts,
     });
     return geometry as any;
   }, [hmState, prepareExportHeightmap, widthMm, depthMm, baseMm, exportToleranceMm, reliefDiameter]);
@@ -1042,7 +1052,7 @@ export default function Studio() {
             </button>
           )}
           {(hmState || frameOn || matOn) ? (
-            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} circularDiameterMm={reliefDiameter} reliefCornerRadiusMm={reliefCornerR} stlWidthMm={widthMm} decimateStep={decimate}
+            <ReliefPreview3D hmState={hmState} openingHeightMm={openingH} circularDiameterMm={reliefDiameter} reliefCornerRadiusMm={reliefCornerR} reliefOutlinePts={reliefOutlinePts} stlWidthMm={widthMm} decimateStep={decimate}
               maxPreviewCells={MESH_PROFILES[meshProfile].previewCells}
               depthMm={depthMm} baseMm={baseMm} baseStyle={"flat" as any} outputMode={"relief"} bgColor={C.viewport}
               reliefZmm={reliefZ}

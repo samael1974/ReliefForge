@@ -83,6 +83,8 @@ type Props = {
   circularDiameterMm?: number;
   /** Angoli arrotondati del rilievo, per combaciare con la cornice. */
   reliefCornerRadiusMm?: number;
+  /** Contorno del rilievo quando la cornice non e' rettangolare. */
+  reliefOutlinePts?: Array<{ x: number; z: number }>;
   decimateStep: number;
   maxPreviewCells?: number;
   depthMm: number;
@@ -157,6 +159,7 @@ function ReliefPreview3DScene({
   openingHeightMm,
   circularDiameterMm,
   reliefCornerRadiusMm,
+  reliefOutlinePts,
   decimateStep,
   maxPreviewCells = 300_000,
   depthMm,
@@ -183,15 +186,16 @@ function ReliefPreview3DScene({
 
     // Rilievo circolare: mesh costruita direttamente tonda (vedi circular-check).
     const rCornerRel = Math.max(0, reliefCornerRadiusMm ?? 0);
-    if ((circularDiameterMm && circularDiameterMm > 0) || rCornerRel > 0.01) {
+    const sagomaRel = reliefOutlinePts && reliefOutlinePts.length >= 3 ? reliefOutlinePts : undefined;
+    if ((circularDiameterMm && circularDiameterMm > 0) || rCornerRel > 0.01 || sagomaRel) {
       const wMm = Math.max(1, stlWidthMm);
       const hMm = wMm * ((hmState.h - 1) / (hmState.w - 1));
       const out = buildCircularSolidFromHeightmap({
         height01: hmState.normF32, width: hmState.w, height: hmState.h,
         outDiameterMm: circularDiameterMm ?? wMm,
-        ...(circularDiameterMm && circularDiameterMm > 0
+        ...(circularDiameterMm && circularDiameterMm > 0 && !sagomaRel
           ? {}
-          : { outWidthMm: wMm, outHeightMm: hMm, cornerRadiusMm: rCornerRel }),
+          : { outWidthMm: wMm, outHeightMm: hMm, cornerRadiusMm: rCornerRel, outlinePts: sagomaRel }),
         depthMm: Math.max(0, depthMm), baseMm: Math.max(0, baseMm),
         // In anteprima si usa un budget di celle piu' basso, ma la DENSITA' resta
         // proporzionale al sorgente: e' quello che determina la resa del rilievo.
@@ -233,7 +237,7 @@ function ReliefPreview3DScene({
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     return geometry;
-  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm, circularDiameterMm, reliefCornerRadiusMm]);
+  }, [hmState, stlWidthMm, decimateStep, maxPreviewCells, depthMm, baseMm, baseStyle, toleranceMm, circularDiameterMm, reliefCornerRadiusMm, reliefOutlinePts]);
 
   const reliefTopY = useMemo(() => {
     if (!solidGeometry) return 0;

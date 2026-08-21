@@ -140,6 +140,25 @@ function normaleInterna(a: Pt2, b: Pt2): { x: number; z: number } {
   return { x: -dz / len, z: dx / len };
 }
 
+/** Distanza dal centro al contorno nella direzione `ang`.
+ *  Il bassorilievo e' costruito per angoli, il contorno per punti: serve a far
+ *  combaciare i due mondi senza duplicare la matematica delle forme. */
+export function raggioNellaDirezione(pts: Pt2[], ang: number): number {
+  const dx = Math.cos(ang), dz = Math.sin(ang);
+  let best = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]!, b = pts[(i + 1) % pts.length]!;
+    const ex = b.x - a.x, ez = b.z - a.z;
+    // Intersezione fra la semiretta dal centro e il segmento a-b.
+    const den = dx * ez - dz * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const t = (a.x * ez - a.z * ex) / den;      // distanza lungo la semiretta
+    const u = (a.x * dz - a.z * dx) / den;      // posizione sul segmento
+    if (t > 0 && u >= -1e-9 && u <= 1 + 1e-9 && t > best) best = t;
+  }
+  return best;
+}
+
 /** Area con segno (shoelace). Su un contorno antiorario e' positiva. */
 export function outlineArea(pts: Pt2[]): number {
   let a = 0;

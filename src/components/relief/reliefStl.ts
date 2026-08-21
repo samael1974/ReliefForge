@@ -29,6 +29,8 @@ type DownloadArgs = {
   circularDiameterMm?: number;
   /** V8.19 — angoli arrotondati del rilievo (mm). */
   reliefCornerRadiusMm?: number;
+  /** V8.24 — contorno del rilievo per cornici non rettangolari. */
+  reliefOutlinePts?: Array<{ x: number; z: number }>;
 };
 
 /** V8.5: mesher adattivo se e' stata indicata una tolleranza, altrimenti griglia uniforme.
@@ -39,20 +41,23 @@ export function buildReliefSolid(a: {
   baseStyle: BaseStyle; toleranceMm?: number; circularDiameterMm?: number;
   /** Angoli arrotondati del rilievo, per combaciare con una cornice arrotondata. */
   reliefCornerRadiusMm?: number;
+  /** Contorno del rilievo quando la cornice non e' rettangolare. */
+  reliefOutlinePts?: Array<{ x: number; z: number }>;
 }) {
   // Rilievo CIRCOLARE: mesh costruita direttamente tonda. Il confronto misurato con
   // l'intersezione booleana e' in scripts/circular-check.mts: 154x piu' veloce, meta'
   // dei triangoli, bordo esatto invece che poligonale.
   const rCorner = Math.max(0, a.reliefCornerRadiusMm ?? 0);
-  if ((a.circularDiameterMm && a.circularDiameterMm > 0) || rCorner > 0.01) {
+  const sagoma = a.reliefOutlinePts && a.reliefOutlinePts.length >= 3 ? a.reliefOutlinePts : undefined;
+  if ((a.circularDiameterMm && a.circularDiameterMm > 0) || rCorner > 0.01 || sagoma) {
     const wMm = a.widthMm;
     const hMm = a.widthMm * ((a.hm.h - 1) / (a.hm.w - 1));
     const out = buildCircularSolidFromHeightmap({
       height01: a.hm.normF32, width: a.hm.w, height: a.hm.h,
       outDiameterMm: a.circularDiameterMm ?? wMm, depthMm: a.depthMm, baseMm: a.baseMm,
-      ...(a.circularDiameterMm && a.circularDiameterMm > 0
+      ...(a.circularDiameterMm && a.circularDiameterMm > 0 && !sagoma
         ? {}
-        : { outWidthMm: wMm, outHeightMm: hMm, cornerRadiusMm: rCorner }),
+        : { outWidthMm: wMm, outHeightMm: hMm, cornerRadiusMm: rCorner, outlinePts: sagoma }),
     });
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(out.vertices, 3));
@@ -589,7 +594,7 @@ export function buildReliefStlBinary(args: DownloadArgs): ArrayBuffer {
   if (!hm) throw new Error("STL: missing heightmap (hm)");
   if (!(hm.normF32 instanceof Float32Array)) throw new Error("STL: hm.normF32 missing/invalid");
 
-  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm, circularDiameterMm: args.circularDiameterMm, reliefCornerRadiusMm: args.reliefCornerRadiusMm });
+  const out = buildReliefSolid({ hm, widthMm, depthMm, baseMm, baseStyle, toleranceMm: args.toleranceMm, circularDiameterMm: args.circularDiameterMm, reliefCornerRadiusMm: args.reliefCornerRadiusMm, reliefOutlinePts: args.reliefOutlinePts });
 const geom = out.geometry;
 geom.rotateZ(Math.PI);
 geom.computeVertexNormals();

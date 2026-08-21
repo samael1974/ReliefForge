@@ -26,6 +26,8 @@ export type BuildCircularSolidInput = {
   outHeightMm?: number;
   /** Raggio degli angoli del dominio rettangolare. */
   cornerRadiusMm?: number;
+  /** Contorno esplicito (ellisse, poligono, rombo): vince su tutto il resto. */
+  outlinePts?: Array<{ x: number; z: number }>;
   /** Ampiezza del rilievo in mm. */
   depthMm: number;
   /** Spessore della base sotto il rilievo in mm. */
@@ -59,6 +61,8 @@ function sampleBilinear(a: Float32Array, w: number, h: number, px: number, py: n
   return (v00 * (1 - fx) + v10 * fx) * (1 - fy) + (v01 * (1 - fx) + v11 * fx) * fy;
 }
 
+import { raggioNellaDirezione } from "./frame/outline";
+
 export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput): BuildCircularSolidOutput {
   const { height01, width: w, height: h } = input;
   const R = Math.max(0.5, input.outDiameterMm / 2);
@@ -91,6 +95,12 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
   /** Punto del contorno per l'angolo dato, su un rettangolo ad angoli arrotondati.
    *  Con rCorner = meta' lato torna esattamente il cerchio. */
   const outline = (ang: number): { x: number; y: number } => {
+    // Contorno esplicito: e' lo stesso che usa la cornice, quindi il rilievo
+    // combacia con l'apertura invece di sbordare con gli spigoli.
+    if (input.outlinePts && input.outlinePts.length >= 3) {
+      const r = raggioNellaDirezione(input.outlinePts, ang);
+      return { x: r * Math.cos(ang), y: r * Math.sin(ang) };
+    }
     if (!rectMode) return { x: R * Math.cos(ang), y: R * Math.sin(ang) };
     // Raggio del contorno nella direzione ang: si interseca la semiretta con il
     // rettangolo smussato campionando la forma in coordinate normalizzate.
