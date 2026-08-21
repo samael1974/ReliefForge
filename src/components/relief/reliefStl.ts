@@ -4,7 +4,7 @@ import { buildCircularSolidFromHeightmap } from "@/lib/relief/buildCircularSolid
 import { buildAdaptiveSolidFromHeightmap } from "@/lib/relief/buildAdaptiveSolid";
 import { buildPassepartoutManifold } from "@/lib/relief/frame/buildPassepartoutManifold";
 import { roundedBox, extrudeOutline, FRAME_CORNER_SEGMENTS } from "@/lib/relief/frame/manifoldPrimitives";
-import { outlinePoints, insetOutline, type OutlineKind } from "@/lib/relief/frame/outline";
+import { outlinePoints, insetOutline, outlineExtent, type OutlineKind } from "@/lib/relief/frame/outline";
 import { computeAssemblyLayout, WELD_BITE, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { OutputMode, BaseStyle } from "@/lib/relief/reliefTypes";
@@ -327,11 +327,20 @@ export async function buildReliefAssemblyGeometry(
   relief.translate(0, 1, 0);                  // Y in [1..H+1]
   const reliefThicknessMm = bb0.max.z - bb0.min.z; // base + profondità
 
-  const planW = widthMm;
+  const planW = widthMm;  // sovrascritto sotto quando il rilievo e' sagomato
   // Stessa formula di buildSolidFromHeightmap: usa i SEGMENTI (w-1, h-1), non i pixel.
   // Con (h/w) la cornice risultava ~0.03 mm più alta del rilievo che doveva contenere.
-  // Rilievo tondo: l'impronta e' quadrata, altrimenti la cornice resterebbe rettangolare.
-  const planH = args.circularDiameterMm && args.circularDiameterMm > 0 ? planW : widthMm * ((hm.h - 1) / (hm.w - 1));
+  // L'impronta deve combaciare con il contorno VERO del rilievo. Se la si deduce
+  // dalle proporzioni dell'immagine mentre il rilievo e' sagomato su un poligono o
+  // un'ellisse, cornice e bassorilievo escono di misure diverse.
+  const estSagoma = args.reliefOutlinePts && args.reliefOutlinePts.length >= 3
+    ? outlineExtent(args.reliefOutlinePts)
+    : null;
+  const planH = estSagoma
+    ? estSagoma.h
+    : args.circularDiameterMm && args.circularDiameterMm > 0
+      ? planW
+      : widthMm * ((hm.h - 1) / (hm.w - 1));
 
   // V8.5: tutte le quote derivate vengono da UNA sola funzione, condivisa con l'anteprima.
   const L = computeAssemblyLayout({

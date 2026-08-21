@@ -382,6 +382,9 @@ export default function Studio() {
   const [polySides, setPolySides] = useState(6);
   // Appoggio del poligono: 0 = punta in basso, 180/lati = lato in basso.
   const [polyRotDeg, setPolyRotDeg] = useState(0);
+  // Un poligono e' regolare per natura: le proporzioni libere servono solo a chi
+  // vuole un rombo o una forma volutamente schiacciata.
+  const [polyRegolare, setPolyRegolare] = useState(true);
   const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
   const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
@@ -423,8 +426,10 @@ export default function Studio() {
   // Ellisse e poligoni hanno l'altezza LIBERA anche con un'immagine caricata:
   // derivandola dalle proporzioni del rilievo, su una foto quadrata l'ellisse
   // diventava per forza un cerchio e i comandi sparivano.
-  const openingH = effShape === "ellipse" || effShape === "polygon"
-    ? openingHmm
+  const openingH = effShape === "polygon" && polyRegolare
+    ? widthMm
+    : effShape === "ellipse" || effShape === "polygon"
+      ? openingHmm
     : effShape === "rect"
       ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm)
       : widthMm;
@@ -1336,10 +1341,13 @@ export default function Studio() {
                         })}
                       </div>
                       <Slider label="Rotazione" value={polyRotDeg} min={0} max={180} step={1} suffix="°" onChange={setPolyRotDeg} />
-                      <Slider label="Larghezza fra i vertici" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                      <Slider label="Altezza fra i vertici" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                      <Toggle label="Poligono regolare" on={polyRegolare} onChange={setPolyRegolare} />
+                      <Slider label={polyRegolare ? "Diametro fra i vertici" : "Larghezza fra i vertici"} value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      {!polyRegolare && (
+                        <Slider label="Altezza fra i vertici" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                      )}
                       <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
-                        Il poligono è <b>inscritto</b>: le misure sono le distanze fra vertici opposti, i lati stanno più internamente. Con <b>4 lati</b> e le due misure diverse ottieni un <b>rombo</b>.
+                        Il poligono è <b>inscritto</b>: la misura è la distanza fra vertici opposti, i lati stanno più internamente. Togliendo <b>Poligono regolare</b> puoi schiacciarlo — con 4 lati e misure diverse ottieni un <b>rombo</b>.
                       </div>
                       {!bordinoValido && (
                         <div style={{ marginTop: 8, padding: 8, border: "1px solid #7a5a34", background: "#2a2012", borderRadius: 7, color: "#e2b25c", fontSize: 11, lineHeight: 1.6 }}>

@@ -12,7 +12,7 @@ import { buildSolidFromHeightmap } from "../src/lib/relief/buildSolidFromHeightm
 import { buildCircularSolidFromHeightmap } from "../src/lib/relief/buildCircularSolid";
 import { getManifold, geomToManifold, manifoldToGeom } from "../src/components/relief/reliefStl";
 import { computeAssemblyLayout } from "../src/lib/relief/frame/assemblyLayout";
-import { outlinePoints, raggioNellaDirezione } from "../src/lib/relief/frame/outline";
+import { outlinePoints, raggioNellaDirezione, outlineExtent } from "../src/lib/relief/frame/outline";
 
 let fail = 0;
 const check = (ok: boolean, msg: string) => { console.log(`  ${ok ? "✓" : "✗"} ${msg}`); if (!ok) fail++; };
@@ -317,5 +317,35 @@ console.log("");
   check(rombo.triangles > 0 && ell.triangles > 0, "entrambe le forme producono un solido");
 }
 
+// ---------------------------------------------------------------------------
+// CORNICE E RILIEVO DELLA STESSA MISURA. Se l'impronta della cornice viene dedotta
+// dalle proporzioni dell'IMMAGINE mentre il rilievo e' sagomato su un poligono o
+// un'ellisse, i due pezzi escono di dimensioni diverse: il rilievo sborda.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("CORNICE E RILIEVO DELLA STESSA MISURA");
+console.log("");
+{
+  const GIOCO = 0.2;
+  const prova = (nome: string, pts: any[]) => {
+    const e = outlineExtent(pts);
+    const L = computeAssemblyLayout({
+      reliefW: e.w, reliefH: e.h, reliefThicknessMm: BASE + DEPTH,
+      reliefYOffset: 1, reliefZmm: 0, matZmm: 0,
+      frame: {
+        solidMm: 5, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
+        lipMm: 3, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: GIOCO,
+      },
+      mat: null, welded: false,
+    } as any);
+    console.log(`  ${nome.padEnd(10)} rilievo ${e.w.toFixed(1)}x${e.h.toFixed(1)} — cavita' ${L.framePocketW.toFixed(1)}x${L.framePocketH.toFixed(1)} mm`);
+    check(Math.abs(L.framePocketW - (e.w + 2 * GIOCO)) < 0.05, `${nome}: cavita' = rilievo + gioco in larghezza`);
+    check(Math.abs(L.framePocketH - (e.h + 2 * GIOCO)) < 0.05, `${nome}: cavita' = rilievo + gioco in altezza`);
+  };
+  prova("esagono", outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 6 }, 64));
+  prova("ellisse", outlinePoints({ kind: "ellipse", halfW: 65, halfH: 45 }, 128));
+}
+
+console.log("");
 console.log(fail ? `❌ ${fail} controllo/i fallito/i.` : "✅ tutti i controlli superati");
 process.exitCode = fail ? 1 : 0;

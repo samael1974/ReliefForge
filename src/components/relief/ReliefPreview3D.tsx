@@ -11,6 +11,7 @@ import { buildPassepartoutRectPhi } from "@/lib/relief/frame/buildPassepartoutRe
 import { buildFrameRectPocket } from "@/lib/relief/frame/buildFrameRectPocket";
 import { computeAssemblyLayout, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { buildCircularSolidFromHeightmap } from "@/lib/relief/buildCircularSolid";
+import { outlineExtent } from "@/lib/relief/frame/outline";
 
 /** Stesso ancoraggio usato dall'export (buildReliefAssemblyGeometry): X e Z centrati,
  *  Y appoggiata a 0. Senza, la mesh resta centrata sull'origine mentre il layout
@@ -250,6 +251,12 @@ function ReliefPreview3DScene({
     // Senza rilievo l'impronta la detta l'apertura dichiarata: e' il progetto di
     // sola cornice. Il quadrato resta solo come ultimo ripiego.
     if (!hmState) return { w: Math.max(1, stlWidthMm), h: Math.max(1, openingHeightMm ?? stlWidthMm) };
+    // Impronta dal contorno VERO del rilievo: dedurla dalle proporzioni
+    // dell'immagine, con un rilievo sagomato, dava una cornice di un'altra misura.
+    if (reliefOutlinePts && reliefOutlinePts.length >= 3) {
+      const e = outlineExtent(reliefOutlinePts);
+      return { w: Math.max(1, e.w), h: Math.max(1, e.h) };
+    }
     // Rilievo tondo: impronta quadrata, altrimenti la cornice resterebbe rettangolare.
     if (circularDiameterMm && circularDiameterMm > 0) {
       const d = Math.max(1, circularDiameterMm);
@@ -259,7 +266,7 @@ function ReliefPreview3DScene({
     // Stessa formula di buildSolidFromHeightmap (segmenti, non pixel).
     const h = w * ((hmState.h - 1) / (hmState.w - 1));
     return { w, h };
-  }, [hmState, stlWidthMm, openingHeightMm, circularDiameterMm]);
+  }, [hmState, stlWidthMm, openingHeightMm, circularDiameterMm, reliefOutlinePts]);
 
   /** Spessore Z reale del solido rilievo, letto dalla geometria costruita. */
   const reliefThicknessMm = useMemo(() => {
