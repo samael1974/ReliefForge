@@ -113,12 +113,12 @@ const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values
     label: "Ritratto",
     hint: "Volto su fondo scuro: soggetto isolato, sfondo piatto, lineamenti leggibili. Tarato su una lavorazione reale.",
     values: {
-      detailMicro: 0.15, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
+      detailMicro: 1.2, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
       localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
       segment: true, segThreshold: 0.1, segFeather: 0,
       levelsAuto: true, curve: IDENTITY_CURVE,
     },
-    relief: { depthMm: 8, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: true },
+    relief: { depthMm: 5, baseMm: 2, widthMm: 130, decimate: 1, meshProfile: "maximum", adaptiveMesh: true },
   },
 };
 
@@ -600,18 +600,58 @@ export default function Studio() {
   }, [quality, runDepth]);
 
   // --- Salva / Apri progetto (.rforge = JSON con tutti i parametri + immagine in base64) ---
-  const saveProject = useCallback(() => {
+  /** Handle del file gia' scelto: permette a "Salva" di riscrivere lo stesso file
+   *  senza richiedere di nuovo il nome. */
+  const projHandleRef = useRef<any>(null);
+
+  const buildProject = useCallback(() => ({
+    app: "ReliefForge", appVersion: __APP_VERSION__, fileVersion: 2, savedAt: new Date().toISOString(),
+    image: imgDataUrl, quality, pp, depthPreset: activeDepthPreset,
+    relief: { depthMm, baseMm, widthMm, decimate, meshProfile },
+    appearance: visualPreferences,
+    frame: { frameOn, matOn, glassOn, frameP, matP, glassP, reliefZ, matZ, rimOn, rimW, rimD },
+  }), [imgDataUrl, quality, pp, activeDepthPreset, depthMm, baseMm, widthMm, decimate, meshProfile, visualPreferences, frameOn, matOn, glassOn, frameP, matP, glassP, reliefZ, matZ, rimOn, rimW, rimD]);
+
+  const scriviProgetto = useCallback(async (handle: any) => {
+    const w = await handle.createWritable();
+    await w.write(new Blob([JSON.stringify(buildProject())], { type: "application/json" }));
+    await w.close();
+  }, [buildProject]);
+
+  /** Salva con nome: chiede sempre dove salvare e con che nome. */
+  const saveProjectAs = useCallback(async () => {
     if (!imgDataUrl) { setStatus("Apri prima un'immagine."); return; }
-    const proj = {
-      app: "ReliefForge", appVersion: __APP_VERSION__, fileVersion: 2, savedAt: new Date().toISOString(),
-      image: imgDataUrl, quality, pp, depthPreset: activeDepthPreset,
-      relief: { depthMm, baseMm, widthMm, decimate, meshProfile },
-      appearance: visualPreferences,
-      frame: { frameOn, matOn, glassOn, frameP, matP, glassP, reliefZ, matZ, rimOn, rimW, rimD },
-    };
-    dl(new Blob([JSON.stringify(proj)], { type: "application/json" }), "progetto.rforge");
-    setStatus("Progetto salvato (.rforge).");
-  }, [imgDataUrl, quality, pp, activeDepthPreset, depthMm, baseMm, widthMm, decimate, meshProfile, visualPreferences, frameOn, matOn, glassOn, frameP, matP, glassP, reliefZ, matZ, rimOn, rimW, rimD]);
+    const picker = (window as any).showSaveFilePicker;
+    if (typeof picker !== "function") {
+      // Ripiego dove la finestra di salvataggio non e' disponibile.
+      dl(new Blob([JSON.stringify(buildProject())], { type: "application/json" }), "progetto.rforge");
+      setStatus("Progetto salvato (.rforge).");
+      return;
+    }
+    try {
+      const handle = await picker.call(window, {
+        suggestedName: projHandleRef.current?.name ?? "progetto.rforge",
+        types: [{ description: "Progetto ReliefForge", accept: { "application/json": [".rforge"] } }],
+      });
+      projHandleRef.current = handle;
+      await scriviProgetto(handle);
+      setStatus(`Progetto salvato: ${handle.name}`);
+    } catch (e: any) {
+      if (e?.name !== "AbortError") setStatus("Errore salvataggio: " + (e?.message ?? String(e)));
+    }
+  }, [imgDataUrl, buildProject, scriviProgetto]);
+
+  /** Salva: riscrive il file gia' scelto. La prima volta si comporta come "Salva con nome". */
+  const saveProject = useCallback(async () => {
+    if (!imgDataUrl) { setStatus("Apri prima un'immagine."); return; }
+    if (!projHandleRef.current) { await saveProjectAs(); return; }
+    try {
+      await scriviProgetto(projHandleRef.current);
+      setStatus(`Progetto salvato: ${projHandleRef.current.name}`);
+    } catch (e: any) {
+      setStatus("Errore salvataggio: " + (e?.message ?? String(e)));
+    }
+  }, [imgDataUrl, saveProjectAs, scriviProgetto]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -888,6 +928,7 @@ export default function Studio() {
                     </span>
                   </MenuItem>
                   <div style={{ borderTop: `1px solid ${C.border}`, margin: "5px 0" }} />
+                  <MenuItem onClick={() => { setFileMenu(false); saveProjectAs(); }}>Salva con nome…</MenuItem>
                   <MenuItem onClick={() => { setFileMenu(false); exportStl(); }}>Esporta STL</MenuItem>
                   <MenuItem onClick={() => { setFileMenu(false); exportDepth16(); }}>Esporta depth 16-bit</MenuItem>
                   <div style={{ borderTop: `1px solid ${C.border}`, margin: "5px 0" }} />
@@ -1131,6 +1172,11 @@ export default function Studio() {
                 <Slider label="Raggio dettaglio (σ)" value={pp.detailSigma} min={0.5} max={4} step={0.1} onChange={(v) => setP("detailSigma", v)} />
                 <Slider strong label="Rilievo locale" value={pp.localAmount} min={0} max={1.5} step={0.1} onChange={(v) => setP("localAmount", v)} />
                 <Slider label="Scala rilievo locale (σ)" value={pp.localSigma} min={1} max={8} step={0.1} onChange={(v) => setP("localSigma", v)} />
+                {pp.localAmount <= 0 && (
+                  <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6, marginTop: -6, marginBottom: 10 }}>
+                    <b style={{ color: C.muted }}>Rilievo locale è a 0</b>: né lui né la sua scala hanno effetto. Alzalo per far risaltare i volumi medi; la scala decide quanto larghi sono i volumi su cui agisce.
+                  </div>
+                )}
                 <Slider label="Volume" value={pp.volumeGamma} min={0.5} max={2} step={0.05} onChange={(v) => setP("volumeGamma", v)} />
                 <Slider label="Contrasto" value={pp.contrastPct} min={0} max={10} step={1} suffix="%" onChange={(v) => setP("contrastPct", v)} />
                 <Slider label="Denoise" value={pp.skinDenoise} min={0} max={4} step={0.1} onChange={(v) => setP("skinDenoise", v)} />

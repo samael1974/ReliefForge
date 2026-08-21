@@ -1,7 +1,7 @@
 {
   "name": "reliefforge",
   "private": true,
-  "version": "8.20.1",
+  "version": "8.21.0",
   "description": "ReliefForge — da foto a bassorilievo stampabile",
   "author": "Federico Cordioli",
   "packageManager": "pnpm@11.7.0",
