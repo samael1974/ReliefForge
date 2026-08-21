@@ -85,9 +85,21 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
   // Dominio: cerchio, oppure rettangolo ad angoli arrotondati. Il secondo serve a
   // far combaciare il rilievo con una cornice arrotondata: senza, gli spigoli
   // quadrati del bassorilievo sbordano oltre il raggio della cornice.
-  const rectMode = !!(input.outWidthMm && input.outHeightMm);
-  const halfW = rectMode ? input.outWidthMm! / 2 : R;
-  const halfH = rectMode ? input.outHeightMm! / 2 : R;
+  const rectMode = !!(input.outWidthMm && input.outHeightMm) || !!input.outlinePts;
+  // Con un contorno esplicito gli assi sono i SUOI, non quelli passati a parte:
+  // usando quelli dell'immagine, l'ellisse veniva disegnata con certe misure e
+  // campionata con altre, e i due assi non combaciavano.
+  let halfW = rectMode ? (input.outWidthMm ?? R * 2) / 2 : R;
+  let halfH = rectMode ? (input.outHeightMm ?? R * 2) / 2 : R;
+  if (input.outlinePts && input.outlinePts.length >= 3) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const q of input.outlinePts) {
+      if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+      if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z;
+    }
+    halfW = Math.max(0.01, (x1 - x0) / 2);
+    halfH = Math.max(0.01, (z1 - z0) / 2);
+  }
   const rCorner = rectMode
     ? Math.max(0, Math.min(input.cornerRadiusMm ?? 0, halfW - 0.01, halfH - 0.01))
     : R;
@@ -131,9 +143,18 @@ export function buildCircularSolidFromHeightmap(input: BuildCircularSolidInput):
     // senza il segno meno il bassorilievo esce capovolto rispetto alla depth map.
     // Il mesher rettangolare usa gia' questa convenzione.
     if (rectMode) {
+      // L'immagine si adatta al contorno RITAGLIANDO, non stirando: si scala il
+      // lato che serve a coprire e si perde l'eccedenza sull'altro. Stirando, un
+      // volto dentro un'ellisse stretta e alta uscirebbe deformato.
       const o = outline(ang);
-      px = cx + (o.x * rNorm / halfW) * ((w - 1) / 2);
-      py = cy - (o.y * rNorm / halfH) * ((h - 1) / 2);
+      const u = (o.x * rNorm) / halfW;   // -1..1 sul contorno
+      const v = (o.y * rNorm) / halfH;
+      const sx = (w - 1) / 2, sy = (h - 1) / 2;
+      const aspImg = sx / sy, aspOut = halfW / halfH;
+      const kx = aspImg > aspOut ? sy * aspOut : sx;
+      const ky = aspImg > aspOut ? sy : sx / aspOut;
+      px = cx + u * kx;
+      py = cy - v * ky;
     } else {
       px = cx + rNorm * halfPx * Math.cos(ang);
       py = cy - rNorm * halfPx * Math.sin(ang);
