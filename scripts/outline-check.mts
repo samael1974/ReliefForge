@@ -7,7 +7,7 @@
 //
 // Uso:  pnpm outline:check
 
-import { outlinePoints, insetOutline, outlineExtent, type OutlineSpec, type Pt2 } from "../src/lib/relief/frame/outline";
+import { outlinePoints, insetOutline, outlineExtent, insetValido, type OutlineSpec, type Pt2 } from "../src/lib/relief/frame/outline";
 
 let fail = 0;
 const check = (ok: boolean, msg: string) => { console.log(`  ${ok ? "✓" : "✗"} ${msg}`); if (!ok) fail++; };
@@ -50,6 +50,7 @@ const casi: Array<[string, OutlineSpec]> = [
   ["pentagono", { kind: "polygon", halfW: 60, halfH: 60, sides: 5 }],
   ["esagono", { kind: "polygon", halfW: 60, halfH: 60, sides: 6 }],
   ["ottagono", { kind: "polygon", halfW: 60, halfH: 60, sides: 8 }],
+  ["rombo 130x90", { kind: "polygon", halfW: 65, halfH: 45, sides: 4 }],
 ];
 
 for (const [nome, spec] of casi) {
@@ -87,6 +88,31 @@ console.log("");
   }
   console.log(`  ellisse allargata e rientrata: scarto massimo ${max.toFixed(4)} mm`);
   check(max < 0.05, "allargare e rientrare riporta al contorno di partenza");
+}
+
+console.log("");
+// ROTAZIONE: appoggio sulla punta o sul lato. Ruotando di 180/lati il poligono
+// passa da un vertice in basso a un lato in basso, e l'ingombro cambia.
+{
+  const punta = outlineExtent(outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 6 }, 64));
+  const lato = outlineExtent(outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 6, rotationDeg: 30 }, 64));
+  console.log(`  esagono sulla punta ${punta.w.toFixed(1)}x${punta.h.toFixed(1)} — sul lato ${lato.w.toFixed(1)}x${lato.h.toFixed(1)} mm`);
+  check(Math.abs(punta.w - lato.h) < 0.5 && Math.abs(punta.h - lato.w) < 0.5, "ruotando di 180/lati l'ingombro si scambia");
+}
+
+// ANGOLI ACUTI: un rombo schiacciato non regge un bordino largo. Serve che il
+// programma se ne accorga PRIMA di produrre un pezzo impossibile.
+{
+  const stretto = outlinePoints({ kind: "polygon", halfW: 70, halfH: 12, sides: 4 }, 64);
+  const largo = outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 6 }, 64);
+  // Il limite vero e' il raggio inscritto: oltre quello il contorno si ripiega.
+  // Per un rombo 140x24 vale (70*12)/hypot(70,12) = 11.8 mm, quindi 10 e' ancora
+  // legittimo e 14 no. Il controllo deve distinguere proprio questi due casi.
+  const rInscritto = (70 * 12) / Math.hypot(70, 12);
+  console.log(`  rombo 140x24: raggio inscritto ${rInscritto.toFixed(1)} mm`);
+  check(insetValido(largo, 5), "esagono ampio: rientro di 5 mm ammesso");
+  check(insetValido(stretto, 10), `rombo schiacciato: rientro di 10 mm ammesso (sotto ${rInscritto.toFixed(1)})`);
+  check(!insetValido(stretto, 14), `rombo schiacciato: rientro di 14 mm rifiutato (oltre ${rInscritto.toFixed(1)})`);
 }
 
 console.log("");

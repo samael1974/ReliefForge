@@ -22,6 +22,7 @@ import { PLYExporter } from "three/examples/jsm/exporters/PLYExporter.js";
 import { fuseDepthDetail } from "@/lib/relief/depth/fuseDepthDetail";
 import { gaussianBlurF32, gammaF32, percentileClipF32 } from "@/lib/relief/transform/tonemap";
 import { encodePng16 } from "@/lib/relief/encodePng16";
+import { outlinePoints, insetValido } from "@/lib/relief/frame/outline";
 import { decodeDepthmapPng } from "@/lib/relief/decodeDepthmapPng";
 import {
   MESH_PROFILES,
@@ -113,7 +114,7 @@ const DEPTH_PRESETS: Record<DepthPresetId, { label: string; hint: string; values
     label: "Ritratto",
     hint: "Volto su fondo scuro: soggetto isolato, sfondo piatto, lineamenti leggibili. Tarato su una lavorazione reale.",
     values: {
-      detailMicro: 1.2, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
+      detailMicro: 0.2, detailSigma: 1.1, skinDenoise: 3, volumeGamma: 0.75,
       localAmount: 0, localSigma: 3, contrastPct: 0, invert: false,
       segment: true, segThreshold: 0.1, segFeather: 0,
       levelsAuto: true, curve: IDENTITY_CURVE,
@@ -374,6 +375,8 @@ export default function Studio() {
   // per ora dalla roadmap. Con un rilievo caricato si torna d'ufficio a "rect".
   const [shape, setShape] = useState<ProjectShape>("rect");
   const [polySides, setPolySides] = useState(6);
+  // Appoggio del poligono: 0 = punta in basso, 180/lati = lato in basso.
+  const [polyRotDeg, setPolyRotDeg] = useState(0);
   const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
   const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
@@ -412,7 +415,7 @@ export default function Studio() {
   // clampa il raggio a w/2, quindi un raggio enorme rende tondo OGNI pezzo
   // (cornice, battuta, vetro, veletta) alla propria misura, senza codice nuovo.
   const effShape: ProjectShape = shape;
-  const openingH = effShape === "rect" || effShape === "ellipse"
+  const openingH = effShape === "rect" || effShape === "ellipse" || effShape === "polygon"
     ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm)
     : widthMm;
   // Diametro del rilievo tondo: solo quando c'e' davvero un rilievo da ritagliare.
@@ -421,14 +424,23 @@ export default function Studio() {
   // senza, i suoi spigoli quadrati sbordano oltre gli angoli arrotondati.
   const reliefCornerR = effShape === "circle" || !frameOn ? 0 : Math.max(0, frameP.cornerRadiusMm - frameP.solidMm);
   const frameCornerR = effShape === "circle" ? 1e6 : frameP.cornerRadiusMm;
-  const frameOutlineKind: "rect" | "ellipse" | "polygon" =
+  const frameOutlineKindRaw: "rect" | "ellipse" | "polygon" =
     effShape === "ellipse" ? "ellipse" : effShape === "polygon" ? "polygon" : "rect";
+
+  /** Su forme molto acute un bordino largo fa ripiegare il contorno interno.
+   *  Si verifica sul contorno vero, non a stima. */
+  const bordinoValido = useMemo(() => {
+    if (frameOutlineKindRaw !== "polygon") return true;
+    const pts = outlinePoints({ kind: "polygon", halfW: widthMm / 2, halfH: openingH / 2, sides: polySides, rotationDeg: polyRotDeg }, 64);
+    return insetValido(pts, Math.max(0, frameP.lipMm) + frameP.solidMm * 0);
+  }, [frameOutlineKindRaw, widthMm, openingH, polySides, polyRotDeg, frameP.lipMm]);
+
   const frameForBuild = useMemo(
     () => ({
       ...frameP, cornerRadiusMm: frameCornerR, glassSeatDepthMm: glassSeatDepth,
-      outlineKind: frameOutlineKind, outlineSides: polySides,
+      outlineKind: frameOutlineKindRaw, outlineSides: polySides, outlineRotationDeg: polyRotDeg,
     }),
-    [frameP, frameCornerR, glassSeatDepth, frameOutlineKind, polySides],
+    [frameP, frameCornerR, glassSeatDepth, frameOutlineKindRaw, polySides, polyRotDeg],
   );
 
   const previewFrame = useMemo(() => ({ enabled: frameOn, ...frameForBuild }), [frameOn, frameForBuild]);
@@ -785,7 +797,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom, outlineKind: frameOutlineKind, outlineSides: polySides } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom, outlineKind: frameOutlineKindRaw, outlineSides: polySides, outlineRotationDeg: polyRotDeg } : null,
       } as any);
       setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
@@ -813,7 +825,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom, outlineKind: frameOutlineKind, outlineSides: polySides } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom, outlineKind: frameOutlineKindRaw, outlineSides: polySides, outlineRotationDeg: polyRotDeg } : null,
       } as any);
       setStatus("STL solo cornice esportato (stampa separata).");
     } catch (e: any) { setStatus("Errore export cornice: " + (e?.message ?? String(e))); }
@@ -1276,10 +1288,33 @@ export default function Studio() {
                   {effShape === "polygon" ? (
                     <>
                       <Slider label="Numero di lati" value={polySides} min={3} max={12} step={1} onChange={setPolySides} />
-                      <Slider label="Apertura fra i vertici" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
-                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
-                        Il poligono è <b>inscritto</b>: la misura è la distanza fra due vertici opposti, quindi i lati stanno più internamente. Bordino e sede vetro seguono gli stessi lati, con bordo di larghezza costante.
+                      <div style={{ fontSize: 12, color: C.muted, margin: "2px 0 6px" }}>Appoggio sul piano</div>
+                      <div style={{ display: "flex", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 11, marginBottom: 10 }}>
+                        {([[0, "Sulla punta"], [180 / Math.max(3, polySides), "Sul lato"]] as [number, string][]).map(([deg, label], i) => {
+                          const on = Math.abs(polyRotDeg - deg) < 0.01;
+                          return (
+                            <button key={label} onClick={() => setPolyRotDeg(deg)} style={{
+                              flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
+                              borderLeft: i ? `1px solid ${C.border2}` : "none",
+                              background: on ? C.accent : "transparent", color: on ? C.accentInk : C.muted,
+                              fontWeight: on ? 600 : 400,
+                            }}>{label}</button>
+                          );
+                        })}
                       </div>
+                      <Slider label="Rotazione" value={polyRotDeg} min={0} max={180} step={1} suffix="°" onChange={setPolyRotDeg} />
+                      <Slider label="Larghezza fra i vertici" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      {!hmState && (
+                        <Slider label="Altezza fra i vertici" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                      )}
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        Il poligono è <b>inscritto</b>: le misure sono le distanze fra vertici opposti, i lati stanno più internamente. Con <b>4 lati</b> e le due misure diverse ottieni un <b>rombo</b>.
+                      </div>
+                      {!bordinoValido && (
+                        <div style={{ marginTop: 8, padding: 8, border: "1px solid #7a5a34", background: "#2a2012", borderRadius: 7, color: "#e2b25c", fontSize: 11, lineHeight: 1.6 }}>
+                          ⚠ Con questa forma la <b>sporgenza del bordino</b> ({frameP.lipMm} mm) è troppa: gli angoli sono così acuti che il contorno interno si ripiega su sé stesso. Riduci la sporgenza, aumenta le misure o usa più lati.
+                        </div>
+                      )}
                     </>
                   ) : effShape === "ellipse" ? (
                     <>

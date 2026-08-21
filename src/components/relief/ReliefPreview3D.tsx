@@ -56,6 +56,7 @@ type FrameUI = {
   reliefLoadFrom?: "front" | "back";
   outlineKind?: "rect" | "ellipse" | "polygon";
   outlineSides?: number;
+  outlineRotationDeg?: number;
   /** Gioco per lato tra rilievo e apertura cornice (mm) — solo assemblaggio separato */
   reliefGapMm?: number;
 };
@@ -335,7 +336,7 @@ function ReliefPreview3DScene({
       glassSeatDepthMm: frame.glassSeatDepthMm ?? 0,
       lipThickMm: frame.lipThickMm ?? 1.6,
       reliefLoadFrom: frame.reliefLoadFrom ?? "front",
-      outline: { kind: frame.outlineKind ?? "rect", halfW: 0, halfH: 0, sides: frame.outlineSides, cornerRadiusMm: frame.cornerRadiusMm ?? 0 },
+      outline: { kind: frame.outlineKind ?? "rect", halfW: 0, halfH: 0, sides: frame.outlineSides, rotationDeg: frame.outlineRotationDeg, cornerRadiusMm: frame.cornerRadiusMm ?? 0 },
     });
     const vertices = (out as any)?.vertices ?? ((out as any)?.[0] as Float32Array | undefined);
     const indices = (out as any)?.indices ?? ((out as any)?.[1] as Uint32Array | undefined);

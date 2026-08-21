@@ -276,6 +276,8 @@ export type FrameCfg = {
   outlineKind?: OutlineKind;
   /** Numero di lati quando la forma e' un poligono. */
   outlineSides?: number;
+  /** Rotazione del contorno in gradi: decide su che lato appoggia un poligono. */
+  outlineRotationDeg?: number;
   /** Battuta vetro frontale: larghezza radiale del labbro. 0 = assente. */
   glassSeatMm?: number;
   /** Profondita' della sede vetro dal fronte (di norma spessore vetro + gioco). */
@@ -435,7 +437,7 @@ export async function buildReliefAssemblyGeometry(
       const kind: OutlineKind = frame.outlineKind ?? "rect";
       const sagomata = kind !== "rect";
       const ptsCavita = sagomata
-        ? outlinePoints({ kind, halfW: backInnerW / 2, halfH: backInnerH / 2, sides: frame.outlineSides }, 256)
+        ? outlinePoints({ kind, halfW: backInnerW / 2, halfH: backInnerH / 2, sides: frame.outlineSides, rotationDeg: frame.outlineRotationDeg }, 256)
         : null;
       /** Solido estruso dal contorno della cavita' rientrato di `inset` mm. */
       const sagoma = (inset: number, depth: number) =>

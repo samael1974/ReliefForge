@@ -140,6 +140,29 @@ function normaleInterna(a: Pt2, b: Pt2): { x: number; z: number } {
   return { x: -dz / len, z: dx / len };
 }
 
+/** Area con segno (shoelace). Su un contorno antiorario e' positiva. */
+export function outlineArea(pts: Pt2[]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!, q = pts[(i + 1) % pts.length]!;
+    a += p.x * q.z - q.x * p.z;
+  }
+  return a / 2;
+}
+
+/**
+ * Un rientro e' valido finche' il contorno interno resta "dentro" quello esterno.
+ * Su un angolo molto acuto — un rombo schiacciato, un triangolo — rientrando troppo
+ * i lati si scavalcano e il contorno si ripiega: l'area cambia segno o crolla.
+ * Serve a fermare la cornice prima che produca un pezzo impossibile.
+ */
+export function insetValido(pts: Pt2[], d: number): boolean {
+  const a0 = outlineArea(pts);
+  if (Math.abs(a0) < 1e-6) return false;
+  const a1 = outlineArea(insetOutline(pts, d));
+  return Math.sign(a1) === Math.sign(a0) && Math.abs(a1) > Math.abs(a0) * 0.02;
+}
+
 /** Ingombro del contorno: serve per le quote e per i controlli. */
 export function outlineExtent(pts: Pt2[]): { w: number; h: number } {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;

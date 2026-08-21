@@ -42,7 +42,8 @@ export type FrameRectPocketParams = {
   lipThickMm?: number;
   /** Da che lato si infila il bassorilievo: il bordino va dal lato opposto. */
   reliefLoadFrom?: "front" | "back";
-  /** Forma della cornice. Assente = rettangolo con gli angoli di cornerRadiusMm. */
+  /** Forma della cornice. Assente = rettangolo con gli angoli di cornerRadiusMm.
+   *  `rotationDeg` decide su che lato appoggia un poligono: 0 = punta in basso. */
   outline?: OutlineSpec;
   /** Raggio di arrotondamento spigoli verticali esterni (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
