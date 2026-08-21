@@ -686,6 +686,18 @@ export default function Studio() {
     }
   }, [imgDataUrl, buildProject, scriviProgetto]);
 
+  /** Nuovo progetto: ricarica la finestra. Azzerare i parametri a mano vorrebbe
+   *  dire elencarli tutti e dimenticarne uno alla prossima aggiunta; il
+   *  ricaricamento riporta allo stato iniziale per costruzione. Le preferenze
+   *  (tema, colori, lato e larghezza del pannello) stanno in localStorage e
+   *  sopravvivono. */
+  const nuovoProgetto = useCallback(() => {
+    const conferma = imgDataUrl || hmState
+      ? window.confirm("Iniziare un progetto nuovo? L'immagine, il rilievo e i parametri non salvati andranno persi.")
+      : true;
+    if (conferma) window.location.reload();
+  }, [imgDataUrl, hmState]);
+
   /** Salva: riscrive il file gia' scelto. La prima volta si comporta come "Salva con nome". */
   const saveProject = useCallback(async () => {
     if (!imgDataUrl) { setStatus("Apri prima un'immagine."); return; }
@@ -964,6 +976,7 @@ export default function Studio() {
               <>
                 <div onClick={() => setFileMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                 <div style={{ position: "absolute", top: 24, left: 0, zIndex: 50, background: C.bar, border: `1px solid ${C.border2}`, borderRadius: 8, padding: 5, minWidth: 215, boxShadow: "0 8px 24px #0009" }}>
+                  <MenuItem onClick={() => { setFileMenu(false); nuovoProgetto(); }}>Nuovo progetto</MenuItem>
                   <MenuItem onClick={() => { setFileMenu(false); fileRef.current?.click(); }}>Apri immagine…</MenuItem>
                   <MenuItem onClick={() => { setFileMenu(false); projRef.current?.click(); }}>Apri progetto (.rforge)…</MenuItem>
                   <MenuItem onClick={() => { setFileMenu(false); saveProject(); }}>
