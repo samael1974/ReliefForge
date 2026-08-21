@@ -115,6 +115,20 @@ console.log("");
   check(!insetValido(stretto, 14), `rombo schiacciato: rientro di 14 mm rifiutato (oltre ${rInscritto.toFixed(1)})`);
 }
 
+// POLIGONI CON ANGOLI ARROTONDATI: il raggio deve smussare davvero i vertici e
+// il bordo deve restare di larghezza costante anche sugli archi.
+{
+  const vivo = outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 6 }, 128);
+  const tondo = outlinePoints({ kind: "polygon", halfW: 60, halfH: 60, sides: 6, cornerRadiusMm: 10 }, 128);
+  const eV = outlineExtent(vivo), eT = outlineExtent(tondo);
+  console.log(`  esagono spigoli vivi ${vivo.length} punti ${eV.w.toFixed(1)}x${eV.h.toFixed(1)} — arrotondato ${tondo.length} punti ${eT.w.toFixed(1)}x${eT.h.toFixed(1)}`);
+  check(tondo.length > vivo.length * 3, `l'arrotondamento aggiunge punti (${vivo.length} -> ${tondo.length})`);
+  check(eT.h < eV.h - 0.5, `gli angoli sono smussati davvero (altezza ${eV.h.toFixed(1)} -> ${eT.h.toFixed(1)})`);
+  const r = larghezzaBordo({ kind: "polygon", halfW: 60, halfH: 60, sides: 6, cornerRadiusMm: 10 }, D, 128);
+  console.log(`  esagono arrotondato: bordo ${r.min.toFixed(3)}–${r.max.toFixed(3)} mm`);
+  check(r.scarto < 0.05 && Math.abs(r.min - D) < 0.05, "bordo costante anche sugli angoli arrotondati");
+}
+
 console.log("");
 console.log(fail ? `❌ ${fail} controllo/i fallito/i.` : "✅ tutti i controlli superati");
 process.exitCode = fail ? 1 : 0;

@@ -318,6 +318,11 @@ export default function Studio() {
   });
   useEffect(() => { localStorage.setItem("rf.inspectorWidth", String(Math.round(inspectorW))); }, [inspectorW]);
   const dragRef = useRef<{ x: number; w: number } | null>(null);
+  // Lato del pannello: chi usa il mouse con la sinistra lo vuole a sinistra.
+  const [inspectorSide, setInspectorSide] = useState<"right" | "left">(
+    () => (localStorage.getItem("rf.inspectorSide") === "left" ? "left" : "right"),
+  );
+  useEffect(() => { localStorage.setItem("rf.inspectorSide", inspectorSide); }, [inspectorSide]);
 
   const C = visualPreferences.theme === "dark" ? DARK_C : LIGHT_C;
   const previewColors = useMemo(() => ({
@@ -433,9 +438,9 @@ export default function Studio() {
     if (!hmState || frameOutlineKindRaw === "rect") return undefined;
     return outlinePoints({
       kind: frameOutlineKindRaw, halfW: widthMm / 2, halfH: openingH / 2,
-      sides: polySides, rotationDeg: polyRotDeg,
+      sides: polySides, rotationDeg: polyRotDeg, cornerRadiusMm: frameP.cornerRadiusMm,
     }, 256);
-  }, [hmState, frameOutlineKindRaw, widthMm, openingH, polySides, polyRotDeg]);
+  }, [hmState, frameOutlineKindRaw, widthMm, openingH, polySides, polyRotDeg, frameP.cornerRadiusMm]);
 
   /** Su forme molto acute un bordino largo fa ripiegare il contorno interno.
    *  Si verifica sul contorno vero, non a stima. */
@@ -980,6 +985,18 @@ export default function Studio() {
               <>
                 <div onClick={() => setPreferencesMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                 <div style={{ position: "absolute", top: 24, left: 0, zIndex: 50, background: C.bar, border: `1px solid ${C.border2}`, borderRadius: 8, padding: 10, width: 260, boxShadow: "0 8px 24px #0009" }}>
+                  <div style={{ fontSize: 11, color: C.hint, marginBottom: 6 }}>Pannello dei comandi</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", border: `1px solid ${C.border2}`, borderRadius: 6, overflow: "hidden", marginBottom: 12 }}>
+                    {([["left", "A sinistra"], ["right", "A destra"]] as Array<["left" | "right", string]>).map(([lato, label]) => (
+                      <button key={lato} onClick={() => setInspectorSide(lato)} style={{
+                        padding: "6px 4px", border: "none", cursor: "pointer", fontSize: 11,
+                        background: inspectorSide === lato ? C.accent : "transparent",
+                        color: inspectorSide === lato ? C.accentInk : C.muted,
+                        fontWeight: inspectorSide === lato ? 600 : 400,
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
                   <div style={{ fontSize: 11, color: C.hint, marginBottom: 6 }}>Aspetto interfaccia</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", border: `1px solid ${C.border2}`, borderRadius: 6, overflow: "hidden", marginBottom: 12 }}>
                     {(["dark", "light"] as ThemeMode[]).map((mode) => (
@@ -1017,7 +1034,7 @@ export default function Studio() {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: inspectorSide === "left" ? "row-reverse" : "row", minHeight: 0 }}>
 
         <div style={{ flex: 1, position: "relative", minWidth: 0, background: C.viewport }}>
           {hmState && (
@@ -1088,14 +1105,15 @@ export default function Studio() {
           onPointerDown={(e) => { dragRef.current = { x: e.clientX, w: inspectorW }; (e.target as HTMLElement).setPointerCapture(e.pointerId); }}
           onPointerMove={(e) => {
             const d = dragRef.current; if (!d) return;
-            setInspectorW(Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, d.w - (e.clientX - d.x))));
+            const delta = (e.clientX - d.x) * (inspectorSide === "left" ? 1 : -1);
+            setInspectorW(Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, d.w + delta)));
           }}
           onPointerUp={(e) => { dragRef.current = null; try { (e.target as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* gia' rilasciato */ } }}
           title="Trascina per allargare o stringere il pannello"
           style={{ width: 6, cursor: "col-resize", background: C.border, flexShrink: 0 }}
         />
 
-        <div style={{ width: inspectorW, background: C.panel, borderLeft: `1px solid ${C.border}`, display: "flex", flexDirection: "column", minHeight: 0, flexShrink: 0 }}>
+        <div style={{ width: inspectorW, background: C.panel, [inspectorSide === "left" ? "borderRight" : "borderLeft"]: `1px solid ${C.border}`, display: "flex", flexDirection: "column", minHeight: 0, flexShrink: 0 }}>
           {/* Le fasi in cima al pannello: prima erano a sinistra e i loro parametri a
               destra, quindi ogni cambio di fase costava un viaggio attraverso lo schermo. */}
           <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, background: C.bar, flexShrink: 0 }}>
@@ -1413,9 +1431,9 @@ export default function Studio() {
                     </button>
                     {frameAdvanced && (
                       <>
-                        {effShape === "circle" ? (
+                        {effShape === "circle" || effShape === "ellipse" ? (
                           <div style={{ ...fieldLabel }}>
-                            <span>Arrotonda bordi</span><span style={{ color: C.hint }}>🔒 forma tonda</span>
+                            <span>Arrotonda bordi</span><span style={{ color: C.hint }}>🔒 forma già curva</span>
                           </div>
                         ) : (
                           <Slider label="Arrotonda bordi" value={frameP.cornerRadiusMm} min={0} max={30} step={0.5} suffix=" mm" onChange={(v) => setFP("cornerRadiusMm", v)} />

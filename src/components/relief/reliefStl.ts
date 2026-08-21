@@ -442,7 +442,7 @@ export async function buildReliefAssemblyGeometry(
       const kind: OutlineKind = frame.outlineKind ?? "rect";
       const sagomata = kind !== "rect";
       const ptsCavita = sagomata
-        ? outlinePoints({ kind, halfW: backInnerW / 2, halfH: backInnerH / 2, sides: frame.outlineSides, rotationDeg: frame.outlineRotationDeg }, 256)
+        ? outlinePoints({ kind, halfW: backInnerW / 2, halfH: backInnerH / 2, sides: frame.outlineSides, rotationDeg: frame.outlineRotationDeg, cornerRadiusMm: R }, 256)
         : null;
       /** Solido estruso dal contorno della cavita' rientrato di `inset` mm. */
       const sagoma = (inset: number, depth: number) =>

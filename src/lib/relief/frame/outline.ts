@@ -21,7 +21,7 @@ export type OutlineSpec = {
   /** Semi-larghezza e semi-altezza dell'ingombro. */
   halfW: number;
   halfH: number;
-  /** Solo per "rect": raggio degli angoli. 0 = spigoli vivi. */
+  /** Raggio degli angoli, per "rect" e per "polygon". 0 = spigoli vivi. */
   cornerRadiusMm?: number;
   /** Solo per "polygon": numero di lati (>= 3). */
   sides?: number;
@@ -30,6 +30,11 @@ export type OutlineSpec = {
 };
 
 const TAU = Math.PI * 2;
+
+function versore(x: number, z: number): { x: number; z: number } {
+  const l = Math.hypot(x, z);
+  return l < 1e-9 ? { x: 0, z: 0 } : { x: x / l, z: z / l };
+}
 
 /** Contorno esterno come punti in senso antiorario. `segments` e' indicativo:
  *  rettangoli e poligoni usano i vertici che servono, le curve si suddividono. */
@@ -58,11 +63,49 @@ export function outlinePoints(spec: OutlineSpec, segments: number): Pt2[] {
     const k = Math.max(3, Math.round(spec.sides ?? 6));
     // Il poligono e' inscritto nell'ingombro: il raggio segue hw e hh, cosi' un
     // esagono in un riquadro rettangolare risulta schiacciato come ci si aspetta.
+    // -90 gradi: un vertice in basso, poi la rotazione decide l'appoggio.
+    const V: Pt2[] = [];
     for (let i = 0; i < k; i++) {
-      // -90 gradi: un lato in basso, che e' l'orientamento che ci si aspetta da
-      // una cornice appoggiata.
       const t = (i / k) * TAU - Math.PI / 2;
-      push(hw * Math.cos(t), hh * Math.sin(t));
+      V.push({ x: hw * Math.cos(t), z: hh * Math.sin(t) });
+    }
+
+    const rPoly = Math.max(0, spec.cornerRadiusMm ?? 0);
+    if (rPoly <= 0.01) {
+      for (const v of V) push(v.x, v.z);
+      return out;
+    }
+
+    // Angoli arrotondati: ogni vertice diventa un arco tangente ai due lati.
+    const segArco = Math.max(2, Math.round(n / (k * 2)));
+    for (let i = 0; i < k; i++) {
+      const prev = V[(i - 1 + k) % k]!, cur = V[i]!, next = V[(i + 1) % k]!;
+      const d1 = versore(prev.x - cur.x, prev.z - cur.z);
+      const d2 = versore(next.x - cur.x, next.z - cur.z);
+      const cosT = Math.max(-0.999, Math.min(0.999, d1.x * d2.x + d1.z * d2.z));
+      const meta = Math.acos(cosT) / 2;
+      const tanMeta = Math.tan(meta);
+      if (tanMeta < 1e-6) { push(cur.x, cur.z); continue; }
+      // Distanza dal vertice ai punti di tangenza, limitata a meta' lato per non
+      // far collidere gli archi di due angoli vicini.
+      const l1 = Math.hypot(prev.x - cur.x, prev.z - cur.z) / 2;
+      const l2 = Math.hypot(next.x - cur.x, next.z - cur.z) / 2;
+      const dist = Math.min(rPoly / tanMeta, l1, l2);
+      const rEff = dist * tanMeta;
+      const p1 = { x: cur.x + d1.x * dist, z: cur.z + d1.z * dist };
+      const p2 = { x: cur.x + d2.x * dist, z: cur.z + d2.z * dist };
+      const bis = versore(d1.x + d2.x, d1.z + d2.z);
+      const c = { x: cur.x + bis.x * (rEff / Math.sin(meta)), z: cur.z + bis.z * (rEff / Math.sin(meta)) };
+      let a1 = Math.atan2(p1.z - c.z, p1.x - c.x);
+      let a2 = Math.atan2(p2.z - c.z, p2.x - c.x);
+      // Arco corto, nel verso che va da p1 a p2.
+      let delta = a2 - a1;
+      while (delta > Math.PI) delta -= TAU;
+      while (delta < -Math.PI) delta += TAU;
+      for (let j = 0; j <= segArco; j++) {
+        const a = a1 + (j / segArco) * delta;
+        push(c.x + rEff * Math.cos(a), c.z + rEff * Math.sin(a));
+      }
     }
     return out;
   }
