@@ -20,6 +20,7 @@ if (-not $SoloApp) {
         "Mesh adattiva"              = { pnpm adaptive:check }
         "Curva tonale"               = { pnpm curve:check }
         "Invarianza STL"             = { pnpm stl:check }
+        "Contorni"                   = { pnpm outline:check }
         "Sola cornice"               = { pnpm frameonly:check }
         "Rilievo circolare"          = { pnpm circular:check }
     }

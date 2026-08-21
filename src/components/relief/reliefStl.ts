@@ -3,7 +3,8 @@ import { buildSolidFromHeightmap } from "@/lib/relief/buildSolidFromHeightmap";
 import { buildCircularSolidFromHeightmap } from "@/lib/relief/buildCircularSolid";
 import { buildAdaptiveSolidFromHeightmap } from "@/lib/relief/buildAdaptiveSolid";
 import { buildPassepartoutManifold } from "@/lib/relief/frame/buildPassepartoutManifold";
-import { roundedBox, FRAME_CORNER_SEGMENTS } from "@/lib/relief/frame/manifoldPrimitives";
+import { roundedBox, extrudeOutline, FRAME_CORNER_SEGMENTS } from "@/lib/relief/frame/manifoldPrimitives";
+import { outlinePoints, insetOutline, type OutlineKind } from "@/lib/relief/frame/outline";
 import { computeAssemblyLayout, WELD_BITE, type AssemblyLayout } from "@/lib/relief/frame/assemblyLayout";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { OutputMode, BaseStyle } from "@/lib/relief/reliefTypes";
@@ -271,6 +272,10 @@ export type FrameCfg = {
   pocketDepthMm: number;
   /** Raggio arrotondamento spigoli verticali (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
+  /** Forma della cornice. "rect" (default) mantiene il percorso collaudato. */
+  outlineKind?: OutlineKind;
+  /** Numero di lati quando la forma e' un poligono. */
+  outlineSides?: number;
   /** Battuta vetro frontale: larghezza radiale del labbro. 0 = assente. */
   glassSeatMm?: number;
   /** Profondita' della sede vetro dal fronte (di norma spessore vetro + gioco). */
@@ -423,8 +428,25 @@ export async function buildReliefAssemblyGeometry(
       const rFront = Math.max(0, R - frame.solidMm - lip);
       const segs = FRAME_CORNER_SEGMENTS;
 
-      const outer = roundedBox(wasm, backInnerW + 2 * frame.solidMm, backInnerH + 2 * frame.solidMm, frH, R, segs);
-      const frontHole = roundedBox(wasm, frontInnerW, frontInnerH, frH + 2, rFront, segs);
+      // Forme diverse dal rettangolo: i contorni concentrici si ricavano dalla
+      // CAVITA' rientrando o allargando di una distanza costante, con la stessa
+      // funzione che usa l'anteprima. Il rettangolo resta su roundedBox, che e'
+      // collaudata: nessun motivo di cambiarla e rischiare una regressione.
+      const kind: OutlineKind = frame.outlineKind ?? "rect";
+      const sagomata = kind !== "rect";
+      const ptsCavita = sagomata
+        ? outlinePoints({ kind, halfW: backInnerW / 2, halfH: backInnerH / 2, sides: frame.outlineSides }, 256)
+        : null;
+      /** Solido estruso dal contorno della cavita' rientrato di `inset` mm. */
+      const sagoma = (inset: number, depth: number) =>
+        extrudeOutline(wasm, insetOutline(ptsCavita!, inset), depth);
+
+      const outer = sagomata
+        ? sagoma(-frame.solidMm, frH)
+        : roundedBox(wasm, backInnerW + 2 * frame.solidMm, backInnerH + 2 * frame.solidMm, frH, R, segs);
+      const frontHole = sagomata
+        ? sagoma(lip, frH + 2)
+        : roundedBox(wasm, frontInnerW, frontInnerH, frH + 2, rFront, segs);
       let frameM = outer.subtract(frontHole);
 
       const seat = Math.max(0, frame.glassSeatMm ?? 0);
@@ -457,7 +479,7 @@ export async function buildReliefAssemblyGeometry(
         const cavCenterZ = dalRetro
           ? -frH / 2 + cavDepth / 2 - 0.5   // cavita' aperta sul RETRO, bordino davanti
           : frH / 2 - cavDepth / 2 + 0.5;   // cavita' aperta sul FRONTE, bordino dietro
-        const cavity = roundedBox(wasm, backInnerW, backInnerH, cavDepth + 1.0, rBack, segs)
+        const cavity = (sagomata ? sagoma(0, cavDepth + 1.0) : roundedBox(wasm, backInnerW, backInnerH, cavDepth + 1.0, rBack, segs))
           .translate([0, 0, cavCenterZ]);
         frameM = frameM.subtract(cavity);
 
@@ -467,7 +489,7 @@ export async function buildReliefAssemblyGeometry(
           const glassW = Math.min(backInnerW + 2 * frame.solidMm - 0.4, backInnerW + 2 * seat);
           const glassH = Math.min(backInnerH + 2 * frame.solidMm - 0.4, backInnerH + 2 * seat);
           const rGlass = Math.max(0, R - frame.solidMm + seat);
-          const glassRecess = roundedBox(wasm, glassW, glassH, seatD + 1.0, rGlass, segs)
+          const glassRecess = (sagomata ? sagoma(-seat, seatD + 1.0) : roundedBox(wasm, glassW, glassH, seatD + 1.0, rGlass, segs))
             .translate([0, 0, frH / 2 - seatD / 2 + 0.5]);
           frameM = frameM.subtract(glassRecess);
         }

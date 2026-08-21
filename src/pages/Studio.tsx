@@ -38,7 +38,7 @@ type Raw = { depth: Float32Array; luma: Float32Array | null; w: number; h: numbe
 
 /** Diagnostica di una depth map importata: serve a spiegare un rilievo piatto prima che sembri un bug. */
 /** Forma dell'apertura del progetto. Predisposto per ovale e arco. */
-type ProjectShape = "rect" | "square" | "circle";
+type ProjectShape = "rect" | "square" | "circle" | "ellipse" | "polygon";
 
 type DepthImportInfo = {
   name: string; w: number; h: number; bitDepth: number; lossy: boolean;
@@ -373,6 +373,7 @@ export default function Studio() {
   // rettangolare dentro una cornice tonda e' una combinazione ambigua, esclusa
   // per ora dalla roadmap. Con un rilievo caricato si torna d'ufficio a "rect".
   const [shape, setShape] = useState<ProjectShape>("rect");
+  const [polySides, setPolySides] = useState(6);
   const [decimate, setDecimate] = useState(DEPTH_PRESETS.ritratto.relief.decimate);
   const [meshProfile, setMeshProfile] = useState<MeshProfile>(DEPTH_PRESETS.ritratto.relief.meshProfile);
 
@@ -411,16 +412,23 @@ export default function Studio() {
   // clampa il raggio a w/2, quindi un raggio enorme rende tondo OGNI pezzo
   // (cornice, battuta, vetro, veletta) alla propria misura, senza codice nuovo.
   const effShape: ProjectShape = shape;
-  const openingH = effShape === "rect" ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm) : widthMm;
+  const openingH = effShape === "rect" || effShape === "ellipse"
+    ? (hmState ? widthMm * hmState.h / hmState.w : openingHmm)
+    : widthMm;
   // Diametro del rilievo tondo: solo quando c'e' davvero un rilievo da ritagliare.
   const reliefDiameter = effShape === "circle" && hmState ? widthMm : undefined;
   // Il rilievo segue il raggio della cornice, rientrato dello spessore del bordo:
   // senza, i suoi spigoli quadrati sbordano oltre gli angoli arrotondati.
   const reliefCornerR = effShape === "circle" || !frameOn ? 0 : Math.max(0, frameP.cornerRadiusMm - frameP.solidMm);
   const frameCornerR = effShape === "circle" ? 1e6 : frameP.cornerRadiusMm;
+  const frameOutlineKind: "rect" | "ellipse" | "polygon" =
+    effShape === "ellipse" ? "ellipse" : effShape === "polygon" ? "polygon" : "rect";
   const frameForBuild = useMemo(
-    () => ({ ...frameP, cornerRadiusMm: frameCornerR, glassSeatDepthMm: glassSeatDepth }),
-    [frameP, frameCornerR, glassSeatDepth],
+    () => ({
+      ...frameP, cornerRadiusMm: frameCornerR, glassSeatDepthMm: glassSeatDepth,
+      outlineKind: frameOutlineKind, outlineSides: polySides,
+    }),
+    [frameP, frameCornerR, glassSeatDepth, frameOutlineKind, polySides],
   );
 
   const previewFrame = useMemo(() => ({ enabled: frameOn, ...frameForBuild }), [frameOn, frameForBuild]);
@@ -777,7 +785,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom, outlineKind: frameOutlineKind, outlineSides: polySides } : null,
       } as any);
       setStatus(`STL cornice+rilievo (fuso): ${formatTriangleCount(res.triangles)} triangoli (${((84 + res.triangles * 50) / 1048576).toFixed(1)} MB).`);
     } catch (e: any) { setStatus("Errore export fuso: " + (e?.message ?? String(e))); }
@@ -805,7 +813,7 @@ export default function Studio() {
         glassSlot: glassOn ? { enabled: true, grooveDepthMm: glassP.lipWmm, slotThicknessMm: glassP.lipThkmm } : null,
         ledValance: rimOn ? { enabled: true, widthMm: rimW, depthMm: rimD } : null,
         mat: matOn ? { steps: matP.steps, totalBandsMm: matP.totalBandsMm, minBandMm: matP.minBandMm, thicknessMm: matP.thicknessMm, stepDropMm: matP.stepDropMm } : null,
-        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom } : null,
+        frame: frameOn ? { solidMm: frameP.solidMm, frameHeightMm: frameP.frameHeightMm, glassMm: frameP.glassMm, glassClearanceMm: frameP.glassClearanceMm, lipMm: frameP.lipMm, pocketDepthMm: frameP.pocketDepthMm, cornerRadiusMm: frameCornerR, reliefGapMm: frameP.reliefGapMm, glassSeatMm: frameP.glassSeatMm, glassSeatDepthMm: glassSeatDepth, lipThickMm: frameP.lipThickMm, reliefLoadFrom: frameP.reliefLoadFrom, outlineKind: frameOutlineKind, outlineSides: polySides } : null,
       } as any);
       setStatus("STL solo cornice esportato (stampa separata).");
     } catch (e: any) { setStatus("Errore export cornice: " + (e?.message ?? String(e))); }
@@ -1253,8 +1261,8 @@ export default function Studio() {
                 <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 10px", marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, marginBottom: 7 }}>APERTURA E FORMA</div>
 
-                  <div style={{ display: "flex", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 11, marginBottom: 12 }}>
-                    {([["rect", "Rettangolare"], ["square", "Quadrata"], ["circle", "Rotonda"]] as [ProjectShape, string][]).map(([id, label], i) => (
+                  <div style={{ display: "flex", flexWrap: "wrap", border: `1px solid ${C.border2}`, borderRadius: 7, overflow: "hidden", fontSize: 10.5, marginBottom: 12 }}>
+                    {([["rect", "Rettangolare"], ["square", "Quadrata"], ["circle", "Rotonda"], ["ellipse", "Ellisse"], ["polygon", "Poligono"]] as [ProjectShape, string][]).map(([id, label], i) => (
                       <button key={id} onClick={() => setShape(id)} style={{
                         flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
                         borderLeft: i ? `1px solid ${C.border2}` : "none",
@@ -1265,7 +1273,25 @@ export default function Studio() {
                     ))}
                   </div>
 
-                  {effShape === "circle" ? (
+                  {effShape === "polygon" ? (
+                    <>
+                      <Slider label="Numero di lati" value={polySides} min={3} max={12} step={1} onChange={setPolySides} />
+                      <Slider label="Apertura fra i vertici" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        Il poligono è <b>inscritto</b>: la misura è la distanza fra due vertici opposti, quindi i lati stanno più internamente. Bordino e sede vetro seguono gli stessi lati, con bordo di larghezza costante.
+                      </div>
+                    </>
+                  ) : effShape === "ellipse" ? (
+                    <>
+                      <Slider label="Larghezza apertura" value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
+                      {!hmState && (
+                        <Slider label="Altezza apertura" value={openingHmm} min={40} max={300} step={5} suffix=" mm" onChange={setOpeningHmm} />
+                      )}
+                      <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+                        Il bordo mantiene <b>larghezza costante</b> lungo tutta l'ellisse: non è una scalatura, che lo assottiglierebbe alle estremità dell'asse maggiore.
+                      </div>
+                    </>
+                  ) : effShape === "circle" ? (
                     <>
                       <Slider label={hmState ? "Diametro rilievo" : "Diametro apertura"} value={widthMm} min={40} max={300} step={5} suffix=" mm" onChange={setWidthMm} />
                       <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>

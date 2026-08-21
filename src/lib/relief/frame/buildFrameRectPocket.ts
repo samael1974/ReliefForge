@@ -18,6 +18,7 @@
 // Quando cornerRadiusMm ≤ 0 → spigoli vivi (perimetri a 4 punti).
 
 import { segmentsForRadius } from "./manifoldPrimitives";
+import { outlinePoints, insetOutline, type OutlineSpec } from "./outline";
 
 export type FrameRectPocketParams = {
   /** Apertura del VASSOIO frontale in X — contiene il vetro */
@@ -41,6 +42,8 @@ export type FrameRectPocketParams = {
   lipThickMm?: number;
   /** Da che lato si infila il bassorilievo: il bordino va dal lato opposto. */
   reliefLoadFrom?: "front" | "back";
+  /** Forma della cornice. Assente = rettangolo con gli angoli di cornerRadiusMm. */
+  outline?: OutlineSpec;
   /** Raggio di arrotondamento spigoli verticali esterni (mm). 0 = spigoli vivi */
   cornerRadiusMm?: number;
   /** Segmenti per ciascun angolo a 90° (qualità della curva). Default 6 */
@@ -137,15 +140,17 @@ export function buildFrameRectPocket(p: FrameRectPocketParams): MeshOut {
   const rFront = Math.max(0, R - thickness - lip);
   const rSeat = Math.max(0, R - thickness + seat);
 
-  // Perimetri (tutti con lo stesso segPerCorner → index-allineati)
-  const perOuter = roundedRectPerimeter(outerW / 2, outerH / 2, rOuter, segPerCorner);
-  const perBack = roundedRectPerimeter(wBack / 2, hBack / 2, rBack, segPerCorner);
-  const perFront = hasPocket
-    ? roundedRectPerimeter(wFront / 2, hFront / 2, rFront, segPerCorner)
-    : perBack;
-  const perSeat = hasGlassSeat
-    ? roundedRectPerimeter(wSeat / 2, hSeat / 2, rSeat, segPerCorner)
-    : perBack;
+  // Perimetri concentrici. La CAVITA' e' l'ancora — deve contenere il rilievo —
+  // e tutti gli altri si ricavano rientrando o allargando di una distanza costante.
+  // Vale per qualunque forma: rettangolo, arrotondato, ellisse, poligono.
+  const spec: OutlineSpec = p.outline
+    ? { ...p.outline, halfW: wBack / 2, halfH: hBack / 2 }
+    : { kind: "rect", halfW: wBack / 2, halfH: hBack / 2, cornerRadiusMm: rBack };
+  const segTot = Math.max(8, segPerCorner * 4);
+  const perBack = outlinePoints(spec, segTot);
+  const perOuter = insetOutline(perBack, -thickness);
+  const perFront = hasPocket ? insetOutline(perBack, lip) : perBack;
+  const perSeat = hasGlassSeat ? insetOutline(perBack, -seat) : perBack;
   const N = perOuter.length;
 
   const V: number[] = [];

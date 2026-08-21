@@ -45,6 +45,15 @@ export function roundedBox(
   return cs.extrude(depth, 0, 0, [1, 1], true);
 }
 
+/** Estrude un contorno qualunque (ellisse, poligono, ...) lungo Z, centrato in z=0.
+ *  Serve alle forme che non sono rettangoli: per quelle resta roundedBox, che e'
+ *  gia' collaudata e non ha motivo di cambiare. */
+export function extrudeOutline(wasm: any, pts: Array<{ x: number; z: number }>, depth: number): any {
+  const poly = pts.map((p) => [p.x, p.z]);
+  const cs = new wasm.CrossSection([poly], "Positive");
+  return cs.extrude(Math.max(1e-4, depth), 0, 0, [1, 1], true);
+}
+
 /** Box manifold con estensione Z esplicita [z0, z1] (comodo per i piani di assieme). */
 export function roundedBoxSpanZ(
   wasm: any,

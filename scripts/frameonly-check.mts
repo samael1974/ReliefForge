@@ -380,6 +380,65 @@ console.log("");
   check(b.bordino < a.bordino - 5, `la sporgenza chiude l'apertura verso l'interno (${a.bordino} -> ${b.bordino} mm)`);
 }
 
+
+// ---------------------------------------------------------------------------
+// FORME: ellisse e poligoni. Passano da extrudeOutline invece che da roundedBox.
+// ---------------------------------------------------------------------------
+console.log("");
+console.log("FORME DELLA CORNICE");
+console.log("");
+{
+  const prova = async (kind: "ellipse" | "polygon", sides: number | undefined, nome: string) => {
+    const r = await buildReliefAssemblyGeometry({
+      hm: aperturaPiatta(APERTURA_W, APERTURA_H),
+      widthMm: APERTURA_W, depthMm: 4, baseMm: 3,
+      outputMode: "relief", baseStyle: "flat", frameOnly: true,
+      frame: {
+        solidMm: BORDO, frameHeightMm: 21, glassMm: 2, glassClearanceMm: 0.25,
+        lipMm: 3.0, pocketDepthMm: 3.6, cornerRadiusMm: 0, reliefGapMm: 0.3,
+        glassSeatMm: SEAT, glassSeatDepthMm: SEAT_D, reliefLoadFrom: "front",
+        outlineKind: kind, outlineSides: sides,
+      },
+      mat: null,
+    } as any);
+    const g = r.geometry;
+    const pos = g.getAttribute("position");
+    const tri = g.index ? g.index.count / 3 : pos.count / 3;
+    g.computeBoundingBox();
+    const bb = g.boundingBox!;
+    const dx = bb.max.x - bb.min.x, dy = bb.max.y - bb.min.y;
+    let finiti = true;
+    for (let i = 0; i < pos.count && finiti; i++) {
+      if (!Number.isFinite(pos.getX(i)) || !Number.isFinite(pos.getY(i)) || !Number.isFinite(pos.getZ(i))) finiti = false;
+    }
+    console.log(`  ${nome.padEnd(12)} ingombro ${dx.toFixed(1)} x ${dy.toFixed(1)} mm, ${tri} triangoli`);
+    check(tri > 20 && finiti, `${nome}: geometria valida`);
+    // L'esterno e' la cavita' allargata del bordo. Un POLIGONO pero' e' inscritto
+    // nel riquadro: i vertici lo toccano, i lati stanno dentro, quindi l'ingombro
+    // reale e' piu' stretto di un fattore che dipende dal numero di lati.
+    const riquadro = APERTURA_W + 2 * 0.3 + 2 * BORDO;
+    let fattore = 1;
+    if (kind === "polygon") {
+      const k = sides ?? 6;
+      let m = 0;
+      for (let i = 0; i < k; i++) m = Math.max(m, Math.abs(Math.cos((i / k) * Math.PI * 2 - Math.PI / 2)));
+      fattore = m;
+    }
+    const atteso = riquadro * fattore;
+    check(Math.abs(dx - atteso) < 2.5, `${nome}: larghezza esterna ${dx.toFixed(1)} ~ ${atteso.toFixed(1)} mm`);
+    return { dx, dy, tri };
+  };
+
+  const ell = await prova("ellipse", undefined, "ellisse");
+  const esa = await prova("polygon", 6, "esagono");
+  const ott = await prova("polygon", 8, "ottagono");
+
+  // Un'ellisse discretizzata costa molti piu' triangoli di un esagono: se il numero
+  // fosse simile, vorrebbe dire che la forma non e' stata applicata.
+  check(ell.tri > esa.tri * 2, `l'ellisse e' davvero curva (${ell.tri} contro ${esa.tri} triangoli dell'esagono)`);
+  check(ott.tri > esa.tri, `l'ottagono ha piu' facce dell'esagono (${ott.tri} > ${esa.tri})`);
+}
+
 console.log(fail ? `\n❌ ${fail} controllo/i fallito/i.` : "\n✅ tutti i controlli superati");
 // Niente process.exit(): il WASM di manifold ha ancora handle aperti e libuv
 // aborta con un assertion, facendo fallire la CI anche quando i controlli passano.
